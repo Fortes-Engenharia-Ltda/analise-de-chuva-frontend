@@ -58,44 +58,78 @@ export const Dashboard = ({ rows }: Props) => {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      {/* Médias mensais (chuvosos e com impacto) por mês */}
-      <div className="grid gap-4 lg:grid-cols-2">
-        <div className="bg-card border rounded-2xl p-5 shadow-card">
-          <h3 className="font-semibold">Média de dias chuvosos por mês</h3>
-          <p className="text-xs text-muted-foreground mb-3">
-            {"\n"}
-          </p>
-          <div className="grid grid-cols-6 gap-2">
-            {monthly.map((m) => (
-              <div key={m.month} className="rounded-xl border bg-primary-soft/40 p-2.5 text-center">
-                <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">
-                  {m.monthLabel}
-                </p>
-                <p className="text-lg font-semibold tabular-nums text-primary">{fmtCeil(m.rainy)}</p>
-              </div>
-            ))}
-          </div>
+      {/* Média de dias chuvosos por mês */}
+      <div className="bg-card border rounded-2xl p-5 shadow-card">
+        <h3 className="font-semibold">Média de dias chuvosos por mês</h3>
+        <p className="text-xs text-muted-foreground mb-3">Média dos últimos 15 anos</p>
+        <div className="grid grid-cols-6 lg:grid-cols-12 gap-2">
+          {monthly.map((m) => (
+            <div key={m.month} className="rounded-xl border bg-primary-soft/40 p-2.5 text-center">
+              <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">
+                {m.monthLabel}
+              </p>
+              <p className="text-lg font-semibold tabular-nums text-primary">{fmtCeil(m.rainy)}</p>
+            </div>
+          ))}
         </div>
+      </div>
 
-        <div className="bg-card border rounded-2xl p-5 shadow-card">
-          <h3 className="font-semibold">Média de dias com impacto por mês</h3>
-          <p className="text-xs text-muted-foreground mb-3">
-            Exclui dias sem impacto (&lt; 2 mm)
-          </p>
-          <div className="grid grid-cols-6 gap-2">
-            {monthly.map((m) => {
-              const impact = m.low + m.moderate + m.high + m.severe;
-              return (
-                <div key={m.month} className="rounded-xl border bg-secondary-soft/40 p-2.5 text-center">
-                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">
-                    {m.monthLabel}
-                  </p>
-                  <p className="text-lg font-semibold tabular-nums text-secondary">{fmtCeil(impact)}</p>
-                </div>
-              );
-            })}
-          </div>
+      {/* Tabela: Média de dias / impacto por mês */}
+      <div className="bg-card border rounded-2xl shadow-card overflow-hidden">
+        <div className="bg-primary text-primary-foreground px-5 py-3">
+          <h3 className="font-semibold text-sm uppercase tracking-wide text-center">
+            Média de dias / impacto por mês
+          </h3>
         </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm border-collapse">
+            <thead>
+              <tr className="bg-muted/40 border-b">
+                <th className="text-left font-semibold px-4 py-3 text-foreground">Mês</th>
+                {(["none", "low", "moderate", "high", "severe"] as const).map((k) => (
+                  <th key={k} className="text-center font-semibold px-3 py-3 text-foreground whitespace-nowrap">
+                    <div className="flex items-center justify-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-sm" style={{ background: IMPACT_COLORS[k] }} />
+                      {IMPACT_LABELS[k]}
+                    </div>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {monthly.map((m, idx) => {
+                const fullMonth = [
+                  "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+                  "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
+                ][idx];
+                return (
+                  <tr key={m.month} className="border-b last:border-b-0 hover:bg-muted/20 transition-colors">
+                    <td className="px-4 py-2.5 font-medium text-secondary">{fullMonth}</td>
+                    {(["none", "low", "moderate", "high", "severe"] as const).map((k) => (
+                      <td key={k} className="text-center px-3 py-2.5 tabular-nums text-muted-foreground">
+                        {fmtCeil(m[k])} <span className="text-xs">dias</span>
+                      </td>
+                    ))}
+                  </tr>
+                );
+              })}
+            </tbody>
+            <tfoot>
+              <tr className="bg-primary/10 border-t-2 border-primary/30">
+                <td className="px-4 py-3 font-bold text-primary uppercase text-xs tracking-wide">
+                  Total de dias impactados
+                </td>
+                <td className="text-center px-3 py-3 text-muted-foreground/60 tabular-nums">—</td>
+                {(["low", "moderate", "high", "severe"] as const).map((k) => (
+                  <td key={k} className="text-center px-3 py-3 font-bold tabular-nums text-foreground">
+                    {fmtCeil(agg.totals[k])} <span className="text-xs font-normal">dias</span>
+                  </td>
+                ))}
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+        <p className="text-[11px] text-muted-foreground px-5 py-2 italic">*Média dos últimos 15 anos</p>
       </div>
 
       {/* Totais por categoria + Ponderado por categoria */}
