@@ -31,9 +31,9 @@ interface Props {
   rows: MonthRow[];
 }
 
-// Arredonda para cima ao próximo inteiro (ex.: 5,1 -> 6)
+// Arredonda para o inteiro mais próximo (ex.: 5,4 -> 5; 5,5 -> 6)
 const fmt = (n: number, d = 1) => n.toLocaleString("pt-BR", { minimumFractionDigits: d, maximumFractionDigits: d });
-const fmtCeil = (n: number) => Math.ceil(n).toLocaleString("pt-BR");
+const fmtCeil = (n: number) => Math.round(n).toLocaleString("pt-BR");
 const pct = (n: number) => `${n.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
 
 export const Dashboard = ({ rows }: Props) => {
