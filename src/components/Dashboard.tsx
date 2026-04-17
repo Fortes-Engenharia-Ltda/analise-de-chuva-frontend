@@ -31,10 +31,9 @@ interface Props {
   rows: MonthRow[];
 }
 
-// Arredonda para cima em 1 casa decimal (ceiling ao próximo 0,1)
-const ceil1 = (n: number) => Math.ceil(n * 10) / 10;
+// Arredonda para cima ao próximo inteiro (ex.: 5,1 -> 6)
 const fmt = (n: number, d = 1) => n.toLocaleString("pt-BR", { minimumFractionDigits: d, maximumFractionDigits: d });
-const fmtCeil = (n: number) => fmt(ceil1(n), 1);
+const fmtCeil = (n: number) => Math.ceil(n).toLocaleString("pt-BR");
 const pct = (n: number) => `${n.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
 
 export const Dashboard = ({ rows }: Props) => {
