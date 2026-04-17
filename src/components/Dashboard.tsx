@@ -12,11 +12,9 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { CalendarDays, CloudRain, Droplets, Activity, Gauge } from "lucide-react";
+import { Activity, Gauge } from "lucide-react";
 import {
   aggregate,
-  avgImpactedDaysPerMonth,
-  avgRainyDaysPerMonth,
   DEFAULT_WEIGHTS,
   IMPACT_COLORS,
   IMPACT_LABELS,
@@ -26,7 +24,6 @@ import {
   type MonthRow,
   type Weights,
 } from "@/lib/rainfall";
-import { KpiCard } from "./KpiCard";
 import { Slider } from "@/components/ui/slider";
 import { Badge } from "@/components/ui/badge";
 
@@ -34,7 +31,10 @@ interface Props {
   rows: MonthRow[];
 }
 
+// Arredonda para cima em 1 casa decimal (ceiling ao próximo 0,1)
+const ceil1 = (n: number) => Math.ceil(n * 10) / 10;
 const fmt = (n: number, d = 1) => n.toLocaleString("pt-BR", { minimumFractionDigits: d, maximumFractionDigits: d });
+const fmtCeil = (n: number) => fmt(ceil1(n), 1);
 const pct = (n: number) => `${n.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
 
 export const Dashboard = ({ rows }: Props) => {
@@ -42,8 +42,6 @@ export const Dashboard = ({ rows }: Props) => {
 
   const monthly = useMemo(() => impactByMonthAvg(rows), [rows]);
   const agg = useMemo(() => aggregate(monthly, weights), [monthly, weights]);
-  const avgRainy = avgRainyDaysPerMonth(monthly);
-  const avgImpact = avgImpactedDaysPerMonth(monthly);
 
   const impactedKeys: ImpactKey[] = ["low", "moderate", "high", "severe"];
   const pieData = impactedKeys.map((k) => ({
