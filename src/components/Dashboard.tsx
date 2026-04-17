@@ -1,0 +1,282 @@
+import { useMemo, useState } from "react";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Legend,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+import { CalendarDays, CloudRain, Droplets, Activity, Gauge } from "lucide-react";
+import {
+  aggregate,
+  avgImpactedDaysPerMonth,
+  avgRainyDaysPerMonth,
+  DEFAULT_WEIGHTS,
+  IMPACT_COLORS,
+  IMPACT_LABELS,
+  IMPACT_RANGES,
+  ImpactKey,
+  impactByMonthAvg,
+  type MonthRow,
+  type Weights,
+} from "@/lib/rainfall";
+import { KpiCard } from "./KpiCard";
+import { Slider } from "@/components/ui/slider";
+import { Badge } from "@/components/ui/badge";
+
+interface Props {
+  rows: MonthRow[];
+}
+
+const fmt = (n: number, d = 1) => n.toLocaleString("pt-BR", { minimumFractionDigits: d, maximumFractionDigits: d });
+const pct = (n: number) => `${n.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
+
+export const Dashboard = ({ rows }: Props) => {
+  const [weights, setWeights] = useState<Weights>(DEFAULT_WEIGHTS);
+
+  const monthly = useMemo(() => impactByMonthAvg(rows), [rows]);
+  const agg = useMemo(() => aggregate(monthly, weights), [monthly, weights]);
+  const avgRainy = avgRainyDaysPerMonth(monthly);
+  const avgImpact = avgImpactedDaysPerMonth(monthly);
+
+  const impactedKeys: ImpactKey[] = ["low", "moderate", "high", "severe"];
+  const pieData = impactedKeys.map((k) => ({
+    name: IMPACT_LABELS[k],
+    value: agg.totals[k],
+    key: k,
+  })).filter((d) => d.value > 0.001);
+
+  const totalsData = impactedKeys.map((k) => ({
+    name: IMPACT_LABELS[k],
+    key: k,
+    dias: agg.totals[k],
+    ponderado: k === "none" ? 0 : agg.weighted[k as "low" | "moderate" | "high" | "severe"],
+  }));
+
+  return (
+    <div className="space-y-6 animate-fade-in">
+      {/* KPIs principais */}
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <KpiCard
+          label="Média de dias chuvosos / mês"
+          value={fmt(avgRainy)}
+          unit="dias"
+          icon={<CloudRain className="w-5 h-5" />}
+          variant="primary"
+        />
+        <KpiCard
+          label="Média de dias com impacto / mês"
+          value={fmt(avgImpact)}
+          unit="dias"
+          icon={<Droplets className="w-5 h-5" />}
+          variant="primary"
+        />
+        <KpiCard
+          label="Total de dias impactados / ano"
+          value={fmt(agg.totalImpacted)}
+          unit="dias"
+          description="Soma das médias mensais (excl. sem impacto)"
+          icon={<CalendarDays className="w-5 h-5" />}
+          variant="secondary"
+        />
+        <KpiCard
+          label="Dias impactados ponderados"
+          value={fmt(agg.weightedSum)}
+          unit="dias"
+          description="Aplicando pesos por categoria"
+          icon={<Gauge className="w-5 h-5" />}
+          variant="secondary"
+        />
+      </div>
+
+      {/* Gráficos */}
+      <div className="grid gap-4 lg:grid-cols-3">
+        {/* Bar mensal stacked */}
+        <div className="lg:col-span-2 bg-card border rounded-2xl p-5 shadow-card">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="font-semibold">Média de dias chuvosos por mês</h3>
+              <p className="text-xs text-muted-foreground">Empilhado por categoria de impacto</p>
+            </div>
+          </div>
+          <div className="h-[300px]">
+            <ResponsiveContainer>
+              <BarChart data={monthly} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                <XAxis dataKey="monthLabel" stroke="hsl(var(--muted-foreground))" fontSize={12} />
+                <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} />
+                <Tooltip
+                  contentStyle={{
+                    background: "hsl(var(--card))",
+                    border: "1px solid hsl(var(--border))",
+                    borderRadius: 12,
+                    fontSize: 12,
+                  }}
+                  formatter={(v: number, name: string) => [fmt(v), name]}
+                />
+                <Legend wrapperStyle={{ fontSize: 12 }} />
+                <Bar dataKey="low" stackId="a" name="Baixo" fill={IMPACT_COLORS.low} radius={[0, 0, 0, 0]} />
+                <Bar dataKey="moderate" stackId="a" name="Moderado" fill={IMPACT_COLORS.moderate} />
+                <Bar dataKey="high" stackId="a" name="Alto" fill={IMPACT_COLORS.high} />
+                <Bar dataKey="severe" stackId="a" name="Severo" fill={IMPACT_COLORS.severe} radius={[6, 6, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Pie distribuição */}
+        <div className="bg-card border rounded-2xl p-5 shadow-card">
+          <h3 className="font-semibold">Distribuição por tipologia</h3>
+          <p className="text-xs text-muted-foreground mb-2">% sobre dias chuvosos</p>
+          <div className="h-[260px]">
+            <ResponsiveContainer>
+              <PieChart>
+                <Pie
+                  data={pieData}
+                  dataKey="value"
+                  nameKey="name"
+                  innerRadius={55}
+                  outerRadius={85}
+                  paddingAngle={2}
+                >
+                  {pieData.map((d) => (
+                    <Cell key={d.key} fill={IMPACT_COLORS[d.key]} stroke="hsl(var(--card))" strokeWidth={2} />
+                  ))}
+                </Pie>
+                <Tooltip
+                  contentStyle={{
+                    background: "hsl(var(--card))",
+                    border: "1px solid hsl(var(--border))",
+                    borderRadius: 12,
+                    fontSize: 12,
+                  }}
+                  formatter={(v: number) => fmt(v)}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="space-y-1.5 mt-2">
+            {impactedKeys.map((k) => (
+              <div key={k} className="flex items-center justify-between text-xs">
+                <span className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-sm" style={{ background: IMPACT_COLORS[k] }} />
+                  {IMPACT_LABELS[k]}
+                </span>
+                <span className="font-medium tabular-nums">{pct(agg.percentages[k])}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Total de dias por categoria + Pesos */}
+      <div className="grid gap-4 lg:grid-cols-3">
+        <div className="lg:col-span-2 bg-card border rounded-2xl p-5 shadow-card">
+          <h3 className="font-semibold">Total de dias impactados (anual) e ponderação</h3>
+          <p className="text-xs text-muted-foreground mb-3">
+            Comparação entre dias brutos e dias ponderados por peso
+          </p>
+          <div className="h-[260px]">
+            <ResponsiveContainer>
+              <BarChart data={totalsData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                <XAxis dataKey="name" stroke="hsl(var(--muted-foreground))" fontSize={12} />
+                <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} />
+                <Tooltip
+                  contentStyle={{
+                    background: "hsl(var(--card))",
+                    border: "1px solid hsl(var(--border))",
+                    borderRadius: 12,
+                    fontSize: 12,
+                  }}
+                  formatter={(v: number) => fmt(v)}
+                />
+                <Legend wrapperStyle={{ fontSize: 12 }} />
+                <Bar dataKey="dias" name="Dias (média)" fill="hsl(var(--primary) / 0.85)" radius={[6, 6, 0, 0]} />
+                <Bar dataKey="ponderado" name="Ponderado" fill="hsl(var(--secondary) / 0.85)" radius={[6, 6, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div className="bg-card border rounded-2xl p-5 shadow-card">
+          <div className="flex items-center justify-between mb-1">
+            <h3 className="font-semibold">Pesos por categoria</h3>
+            <Badge variant="outline" className="text-[10px]">Editável</Badge>
+          </div>
+          <p className="text-xs text-muted-foreground mb-4">Ajuste a importância de cada faixa</p>
+          <div className="space-y-4">
+            {(["low", "moderate", "high", "severe"] as const).map((k) => (
+              <div key={k}>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-xs flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-sm" style={{ background: IMPACT_COLORS[k] }} />
+                    {IMPACT_LABELS[k]}
+                    <span className="text-muted-foreground">({IMPACT_RANGES[k]})</span>
+                  </span>
+                  <span className="text-xs font-medium tabular-nums">{Math.round(weights[k] * 100)}%</span>
+                </div>
+                <Slider
+                  value={[weights[k] * 100]}
+                  onValueChange={([v]) => setWeights({ ...weights, [k]: v / 100 })}
+                  min={0}
+                  max={200}
+                  step={5}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Indicadores de improdutividade */}
+      <div className="bg-card border rounded-2xl p-5 shadow-card">
+        <div className="flex items-center gap-2 mb-1">
+          <Activity className="w-4 h-4 text-secondary" />
+          <h3 className="font-semibold">Improdutividade considerada (anual)</h3>
+        </div>
+        <p className="text-xs text-muted-foreground mb-4">
+          Calculada sobre os dias ponderados, dividida por 365 dias
+        </p>
+        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+          {[
+            {
+              label: "Obras cobertas",
+              value: agg.unprodCovered,
+              hint: "Severo / 365",
+            },
+            {
+              label: "Fora de áreas industriais",
+              value: agg.unprodOutsideIndustrial,
+              hint: "(Mod + Alto + Sev) / 365",
+            },
+            {
+              label: "Comuns em áreas industriais",
+              value: agg.unprodCommonIndustrial,
+              hint: "(Bx + Mod + Alto + Sev) / 365",
+            },
+            {
+              label: "Alto volume de terraplenagem",
+              value: agg.unprodEarthworks,
+              hint: "(Bx + Mod + Alto + Sev) / 365",
+            },
+          ].map((item) => (
+            <div key={item.label} className="rounded-xl border bg-muted/30 p-4">
+              <p className="text-xs text-muted-foreground">{item.label}</p>
+              <p className="text-2xl font-semibold tracking-tight mt-1 tabular-nums">
+                {pct(item.value * 100)}
+              </p>
+              <p className="text-[10px] text-muted-foreground mt-1 font-mono">{item.hint}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
