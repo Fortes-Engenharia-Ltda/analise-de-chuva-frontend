@@ -12,11 +12,9 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { CalendarDays, CloudRain, Droplets, Activity, Gauge } from "lucide-react";
+import { Activity, Gauge } from "lucide-react";
 import {
   aggregate,
-  avgImpactedDaysPerMonth,
-  avgRainyDaysPerMonth,
   DEFAULT_WEIGHTS,
   IMPACT_COLORS,
   IMPACT_LABELS,
@@ -26,7 +24,6 @@ import {
   type MonthRow,
   type Weights,
 } from "@/lib/rainfall";
-import { KpiCard } from "./KpiCard";
 import { Slider } from "@/components/ui/slider";
 import { Badge } from "@/components/ui/badge";
 
@@ -34,7 +31,10 @@ interface Props {
   rows: MonthRow[];
 }
 
+// Arredonda para cima em 1 casa decimal (ceiling ao próximo 0,1)
+const ceil1 = (n: number) => Math.ceil(n * 10) / 10;
 const fmt = (n: number, d = 1) => n.toLocaleString("pt-BR", { minimumFractionDigits: d, maximumFractionDigits: d });
+const fmtCeil = (n: number) => fmt(ceil1(n), 1);
 const pct = (n: number) => `${n.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
 
 export const Dashboard = ({ rows }: Props) => {
@@ -42,8 +42,6 @@ export const Dashboard = ({ rows }: Props) => {
 
   const monthly = useMemo(() => impactByMonthAvg(rows), [rows]);
   const agg = useMemo(() => aggregate(monthly, weights), [monthly, weights]);
-  const avgRainy = avgRainyDaysPerMonth(monthly);
-  const avgImpact = avgImpactedDaysPerMonth(monthly);
 
   const impactedKeys: ImpactKey[] = ["low", "moderate", "high", "severe"];
   const pieData = impactedKeys.map((k) => ({
@@ -61,38 +59,70 @@ export const Dashboard = ({ rows }: Props) => {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      {/* KPIs principais */}
+      {/* Médias mensais (chuvosos e com impacto) por mês */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <div className="bg-card border rounded-2xl p-5 shadow-card">
+          <h3 className="font-semibold">Média de dias chuvosos por mês</h3>
+          <p className="text-xs text-muted-foreground mb-3">
+            Valores arredondados para cima (ceil em 0,1)
+          </p>
+          <div className="grid grid-cols-6 gap-2">
+            {monthly.map((m) => (
+              <div key={m.month} className="rounded-xl border bg-primary-soft/40 p-2.5 text-center">
+                <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">
+                  {m.monthLabel}
+                </p>
+                <p className="text-lg font-semibold tabular-nums text-primary">{fmtCeil(m.rainy)}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="bg-card border rounded-2xl p-5 shadow-card">
+          <h3 className="font-semibold">Média de dias com impacto por mês</h3>
+          <p className="text-xs text-muted-foreground mb-3">
+            Exclui dias sem impacto (&lt; 2 mm)
+          </p>
+          <div className="grid grid-cols-6 gap-2">
+            {monthly.map((m) => {
+              const impact = m.low + m.moderate + m.high + m.severe;
+              return (
+                <div key={m.month} className="rounded-xl border bg-secondary-soft/40 p-2.5 text-center">
+                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">
+                    {m.monthLabel}
+                  </p>
+                  <p className="text-lg font-semibold tabular-nums text-secondary">{fmtCeil(impact)}</p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* Totais por categoria + Ponderado por categoria */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <KpiCard
-          label="Média de dias chuvosos / mês"
-          value={fmt(avgRainy)}
-          unit="dias"
-          icon={<CloudRain className="w-5 h-5" />}
-          variant="primary"
-        />
-        <KpiCard
-          label="Média de dias com impacto / mês"
-          value={fmt(avgImpact)}
-          unit="dias"
-          icon={<Droplets className="w-5 h-5" />}
-          variant="primary"
-        />
-        <KpiCard
-          label="Total de dias impactados / ano"
-          value={fmt(agg.totalImpacted)}
-          unit="dias"
-          description="Soma das médias mensais (excl. sem impacto)"
-          icon={<CalendarDays className="w-5 h-5" />}
-          variant="secondary"
-        />
-        <KpiCard
-          label="Dias impactados ponderados"
-          value={fmt(agg.weightedSum)}
-          unit="dias"
-          description="Aplicando pesos por categoria"
-          icon={<Gauge className="w-5 h-5" />}
-          variant="secondary"
-        />
+        {impactedKeys.map((k) => (
+          <div key={`tot-${k}`} className="rounded-2xl border bg-card p-5 shadow-card">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="w-2.5 h-2.5 rounded-sm" style={{ background: IMPACT_COLORS[k] }} />
+              <p className="text-xs uppercase tracking-wide text-muted-foreground font-medium">
+                {IMPACT_LABELS[k]}
+              </p>
+            </div>
+            <p className="text-3xl font-semibold tracking-tight tabular-nums">
+              {fmtCeil(agg.totals[k])}
+              <span className="text-base text-muted-foreground font-normal ml-1">dias</span>
+            </p>
+            <div className="mt-2 pt-2 border-t flex items-center justify-between text-xs">
+              <span className="text-muted-foreground flex items-center gap-1">
+                <Gauge className="w-3 h-3" /> Ponderado
+              </span>
+              <span className="font-medium tabular-nums">
+                {fmtCeil(agg.weighted[k as "low" | "moderate" | "high" | "severe"])} dias
+              </span>
+            </div>
+          </div>
+        ))}
       </div>
 
       {/* Gráficos */}
