@@ -63,7 +63,7 @@ export const Dashboard = ({ rows }: Props) => {
         <div className="bg-card border rounded-2xl p-5 shadow-card">
           <h3 className="font-semibold">Média de dias chuvosos por mês</h3>
           <p className="text-xs text-muted-foreground mb-3">
-            Valores arredondados para cima (ceil em 0,1)
+            {"\n"}
           </p>
           <div className="grid grid-cols-6 gap-2">
             {monthly.map((m) => (
