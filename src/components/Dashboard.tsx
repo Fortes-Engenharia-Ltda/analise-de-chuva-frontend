@@ -82,7 +82,7 @@ export const Dashboard = forwardRef<DashboardHandle, Props>(
   }));
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div ref={chartsRef} className="space-y-6 animate-fade-in">
       {/* Média de dias chuvosos por mês */}
       <div className="bg-card border rounded-2xl p-5 shadow-card print-section">
         <h3 className="font-semibold">Média de dias chuvosos por mês</h3>
@@ -186,7 +186,7 @@ export const Dashboard = forwardRef<DashboardHandle, Props>(
       {/* Gráficos */}
       <div className="grid gap-4 lg:grid-cols-3 print-section">
         {/* Bar mensal stacked */}
-        <div className="lg:col-span-2 bg-card border rounded-2xl p-5 shadow-card print-avoid-break">
+        <div className="lg:col-span-2 bg-card border rounded-2xl p-5 shadow-card print-avoid-break pdf-chart">
           <div className="flex items-center justify-between mb-4">
             <div>
               <h3 className="font-semibold">Média de dias chuvosos por mês</h3>
@@ -219,7 +219,7 @@ export const Dashboard = forwardRef<DashboardHandle, Props>(
         </div>
 
         {/* Pie distribuição */}
-        <div className="bg-card border rounded-2xl p-5 shadow-card print-avoid-break">
+        <div className="bg-card border rounded-2xl p-5 shadow-card print-avoid-break pdf-chart">
           <h3 className="font-semibold">Distribuição por tipologia</h3>
           <p className="text-xs text-muted-foreground mb-2">% sobre dias chuvosos</p>
           <div className="h-[260px]">
@@ -265,7 +265,7 @@ export const Dashboard = forwardRef<DashboardHandle, Props>(
 
       {/* Total de dias por categoria + Pesos */}
       <div className="grid gap-4 lg:grid-cols-3 print-section">
-        <div className="lg:col-span-2 bg-card border rounded-2xl p-5 shadow-card print-avoid-break">
+        <div className="lg:col-span-2 bg-card border rounded-2xl p-5 shadow-card print-avoid-break pdf-chart">
           <h3 className="font-semibold">Total de dias impactados (anual) e ponderação</h3>
           <p className="text-xs text-muted-foreground mb-3">
             Comparação entre dias brutos e dias ponderados por peso
@@ -367,4 +367,5 @@ export const Dashboard = forwardRef<DashboardHandle, Props>(
       </div>
     </div>
   );
-};
+});
+Dashboard.displayName = "Dashboard";
