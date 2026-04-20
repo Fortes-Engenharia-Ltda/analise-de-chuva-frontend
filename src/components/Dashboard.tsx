@@ -44,11 +44,28 @@ const fmt = (n: number, d = 1) => n.toLocaleString("pt-BR", { minimumFractionDig
 const fmtCeil = (n: number) => Math.round(n).toLocaleString("pt-BR");
 const pct = (n: number) => `${n.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
 
-export const Dashboard = ({ rows }: Props) => {
+export const Dashboard = forwardRef<DashboardHandle, Props>(
+  ({ rows, location, estacaoCodigo, yearsRange }, ref) => {
   const [weights, setWeights] = useState<Weights>(DEFAULT_WEIGHTS);
+  const chartsRef = useRef<HTMLDivElement>(null);
 
   const monthly = useMemo(() => impactByMonthAvg(rows), [rows]);
   const agg = useMemo(() => aggregate(monthly, weights), [monthly, weights]);
+
+  useImperativeHandle(ref, () => ({
+    exportPdf: async () => {
+      await exportDashboardPdf({
+        location,
+        estacaoCodigo,
+        monthsCount: rows.length,
+        yearsRange,
+        monthly,
+        agg,
+        weights,
+        chartContainer: chartsRef.current,
+      });
+    },
+  }), [location, estacaoCodigo, rows.length, yearsRange, monthly, agg, weights]);
 
   const impactedKeys: ImpactKey[] = ["low", "moderate", "high", "severe"];
   const pieData = impactedKeys.map((k) => ({
