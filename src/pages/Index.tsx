@@ -1,17 +1,34 @@
-import { useMemo, useState } from "react";
-import { ArrowLeft, BarChart3, Database, Printer } from "lucide-react";
+import { useMemo, useRef, useState } from "react";
+import { ArrowLeft, BarChart3, Database, Loader2, Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { UploadScreen } from "@/components/UploadScreen";
 import { MetadataBar } from "@/components/MetadataBar";
-import { Dashboard } from "@/components/Dashboard";
+import { Dashboard, type DashboardHandle } from "@/components/Dashboard";
 import { DataTables } from "@/components/DataTables";
 import { ImpactLegend } from "@/components/ImpactLegend";
 import { filterByYears, type ParsedFile } from "@/lib/rainfall";
+import { toast } from "sonner";
 
 const Index = () => {
   const [location, setLocation] = useState<string | null>(null);
   const [data, setData] = useState<ParsedFile | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const dashboardRef = useRef<DashboardHandle>(null);
+
+  const handleExport = async () => {
+    if (!dashboardRef.current) return;
+    setExporting(true);
+    try {
+      await dashboardRef.current.exportPdf();
+      toast.success("PDF gerado com sucesso");
+    } catch (e) {
+      console.error(e);
+      toast.error("Falha ao gerar PDF");
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const filteredRows = useMemo(
     () => (data ? filterByYears(data.rows, 15) : []),
@@ -53,9 +70,13 @@ const Index = () => {
           </div>
           <div className="flex items-center gap-2">
             <ImpactLegend />
-            <Button variant="outline" size="sm" onClick={() => window.print()}>
-              <Printer className="w-4 h-4 mr-1.5" />
-              Exportar PDF
+            <Button variant="outline" size="sm" onClick={handleExport} disabled={exporting}>
+              {exporting ? (
+                <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
+              ) : (
+                <Printer className="w-4 h-4 mr-1.5" />
+              )}
+              {exporting ? "Gerando…" : "Exportar PDF"}
             </Button>
             <Button
               variant="ghost"
