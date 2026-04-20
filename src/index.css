@@ -129,6 +129,28 @@
   .shadow-card, .shadow-elevated { box-shadow: none !important; }
   .border { border-color: #d1d5db !important; }
   main { padding: 0 !important; }
-  .print-break-avoid { break-inside: avoid; page-break-inside: avoid; }
-  .recharts-wrapper { page-break-inside: avoid; }
+
+  /* Cada seção marcada inicia em uma página nova e nunca é cortada */
+  .print-section {
+    break-before: page;
+    page-break-before: always;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  /* Primeira seção não força quebra (evita página em branco no início) */
+  .print-section:first-of-type {
+    break-before: auto;
+    page-break-before: auto;
+  }
+
+  /* Blocos atômicos que não devem ser partidos */
+  .print-avoid-break,
+  .recharts-wrapper,
+  table,
+  thead, tfoot, tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  thead { display: table-header-group; }
+  tfoot { display: table-footer-group; }
 }
