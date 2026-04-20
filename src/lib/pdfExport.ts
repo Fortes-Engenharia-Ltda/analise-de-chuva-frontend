@@ -40,6 +40,8 @@ const MONTHS_FULL = [
   "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
 ];
 
+const IMPACTED_KEYS: ImpactKey[] = ["low", "moderate", "high", "severe"];
+
 const round = (n: number) => Math.round(n).toLocaleString("pt-BR");
 const fmt1 = (n: number) =>
   n.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
@@ -59,6 +61,14 @@ interface ExportArgs {
   agg: AggregatedImpact;
   weights: Weights;
   chartContainer?: HTMLElement | null;
+}
+
+interface ChartSummary {
+  head: string[];
+  body: string[][];
+  note?: string;
+  impactOrder?: ImpactKey[];
+  rowIntensity?: number[];
 }
 
 const drawHeader = (doc: jsPDF, title: string, subtitle: string) => {
@@ -104,6 +114,69 @@ const sectionTitle = (doc: jsPDF, y: number, label: string) => {
   doc.setTextColor(...C.primary);
   doc.text(label.toUpperCase(), PAGE.margin + 3, y + 5.5);
   return y + 12;
+};
+
+const clamp01 = (n: number) => Math.max(0, Math.min(1, n));
+
+const mixColor = (
+  a: [number, number, number],
+  b: [number, number, number],
+  t: number
+): [number, number, number] => {
+  const p = clamp01(t);
+  return [
+    Math.round(a[0] + (b[0] - a[0]) * p),
+    Math.round(a[1] + (b[1] - a[1]) * p),
+    Math.round(a[2] + (b[2] - a[2]) * p),
+  ];
+};
+
+const buildChartSummary = (
+  type: "monthly" | "distribution" | "totals",
+  args: ExportArgs
+): ChartSummary => {
+  if (type === "monthly") {
+    const rainyPerMonth = args.monthly.map((m) => m.rainy);
+
+    return {
+      head: ["Mês", "Dias chuvosos médios", "Alta severidade (alto + severo)"],
+      body: args.monthly.map((m) => [
+        MONTHS_FULL[m.month - 1],
+        `${fmt1(m.rainy)} dias`,
+        `${fmt1(m.high + m.severe)} dias`,
+      ]),
+      rowIntensity: rainyPerMonth,
+    };
+  }
+
+  if (type === "distribution") {
+    return {
+      head: ["Categoria", "Faixa", "Dias/ano", "Participação"],
+      body: IMPACTED_KEYS.map((k) => [
+        IMPACT_LABELS[k],
+        IMPACT_RANGES[k],
+        fmt1(args.agg.totals[k]),
+        pct(args.agg.percentages[k]),
+      ]),
+      impactOrder: IMPACTED_KEYS,
+    };
+  }
+
+  return {
+    head: ["Categoria", "Dias (média)", "Ponderado", "Peso"],
+    body: IMPACTED_KEYS.map((k) => [
+      IMPACT_LABELS[k],
+      fmt1(args.agg.totals[k]),
+      fmt1(args.agg.weighted[k]),
+      `${Math.round(args.weights[k] * 100)}%`,
+    ]),
+    impactOrder: IMPACTED_KEYS,
+  };
+};
+
+const estimateSummaryHeight = (rowsCount: number, hasNote: boolean) => {
+  const tableHeight = 12 + rowsCount * 6;
+  return tableHeight + (hasNote ? 5 : 0);
 };
 
 // ============================================================
@@ -297,52 +370,7 @@ const renderMonthlyImpact = (doc: jsPDF, args: ExportArgs) => {
   });
 };
 
-// ============================================================
-//  PÁGINA 3 — Pesos + Improdutividades
-// ============================================================
-const renderUnproductivity = (doc: jsPDF, args: ExportArgs) => {
-  doc.addPage();
-  drawHeader(doc, `Análise de Chuva — ${args.location}`, "Ponderação e improdutividade considerada");
-
-  let y = 38;
-
-  // === Pesos ===
-  y = sectionTitle(doc, y, "Pesos por categoria (configuração atual)");
-
-  const weightRows = (["low", "moderate", "high", "severe"] as const).map((k) => [
-    IMPACT_LABELS[k],
-    IMPACT_RANGES[k],
-    `${Math.round(args.weights[k] * 100)}%`,
-    `${fmt1(args.agg.weighted[k])} dias`,
-  ]);
-
-  autoTable(doc, {
-    startY: y,
-    head: [["Categoria", "Faixa", "Peso", "Dias ponderados"]],
-    body: weightRows,
-    theme: "grid",
-    headStyles: { fillColor: C.primary, textColor: C.white, fontSize: 9, halign: "center" },
-    bodyStyles: { fontSize: 9, textColor: C.text },
-    columnStyles: {
-      0: { fontStyle: "bold" },
-      1: { halign: "center" },
-      2: { halign: "center", fontStyle: "bold" },
-      3: { halign: "center" },
-    },
-    margin: { left: PAGE.margin, right: PAGE.margin },
-    didParseCell: (data) => {
-      if (data.section === "body" && data.column.index === 0) {
-        const order = ["low", "moderate", "high", "severe"] as ImpactKey[];
-        data.cell.styles.textColor = IMPACT_RGB[order[data.row.index]];
-      }
-    },
-  });
-
-  y = (doc as any).lastAutoTable.finalY + 10;
-
-  // === Improdutividade ===
-  y = sectionTitle(doc, y, "Improdutividade considerada (anual)");
-
+const drawUnproductivityCards = (doc: jsPDF, args: ExportArgs, y: number) => {
   const items = [
     { label: "Obras cobertas", value: args.agg.unprodCovered, hint: "Severo / 365" },
     { label: "Fora de áreas industriais", value: args.agg.unprodOutsideIndustrial, hint: "(Mod + Alto + Sev) / 365" },
@@ -386,6 +414,131 @@ const renderUnproductivity = (doc: jsPDF, args: ExportArgs) => {
 };
 
 // ============================================================
+//  PÁGINA 3 — Pesos + Gráfico de ponderação + Improdutividades
+// ============================================================
+const renderUnproductivity = async (doc: jsPDF, args: ExportArgs) => {
+  doc.addPage();
+  drawHeader(doc, `Análise de Chuva — ${args.location}`, "Ponderação e improdutividade considerada");
+
+  let y = 38;
+
+  // === Pesos ===
+  y = sectionTitle(doc, y, "Pesos por categoria (configuração atual)");
+
+  const weightRows = (["low", "moderate", "high", "severe"] as const).map((k) => [
+    IMPACT_LABELS[k],
+    IMPACT_RANGES[k],
+    `${Math.round(args.weights[k] * 100)}%`,
+    `${fmt1(args.agg.weighted[k])} dias`,
+  ]);
+
+  autoTable(doc, {
+    startY: y,
+    head: [["Categoria", "Faixa", "Peso", "Dias ponderados"]],
+    body: weightRows,
+    theme: "grid",
+    headStyles: { fillColor: C.primary, textColor: C.white, fontSize: 9, halign: "center" },
+    bodyStyles: { fontSize: 9, textColor: C.text },
+    columnStyles: {
+      0: { fontStyle: "bold" },
+      1: { halign: "center" },
+      2: { halign: "center", fontStyle: "bold" },
+      3: { halign: "center" },
+    },
+    margin: { left: PAGE.margin, right: PAGE.margin },
+    didParseCell: (data) => {
+      if (data.section === "body" && data.column.index === 0) {
+        const order = ["low", "moderate", "high", "severe"] as ImpactKey[];
+        data.cell.styles.textColor = IMPACT_RGB[order[data.row.index]];
+      }
+    },
+  });
+
+  y = (doc as any).lastAutoTable.finalY + 6;
+
+  // === Gráfico de ponderação (3º gráfico do dashboard) ===
+  const totalsChartEl = args.chartContainer
+    ? args.chartContainer.querySelectorAll<HTMLElement>(".pdf-chart")[2]
+    : null;
+
+  if (totalsChartEl) {
+    const canvas = await html2canvas(totalsChartEl, {
+      scale: 2,
+      backgroundColor: "#ffffff",
+      logging: false,
+    });
+
+    const imgData = canvas.toDataURL("image/png");
+    const ratio = canvas.height / canvas.width;
+    const summary = buildChartSummary("totals", args);
+
+    let imgW = CONTENT_W * 0.8;
+    let imgH = imgW * ratio;
+    let summaryH = estimateSummaryHeight(summary.body.length, false);
+    let blockH = imgH + summaryH + 10;
+
+    // Reduz a imagem para manter o gráfico + tabela na mesma página dos pesos.
+    while (y + blockH > PAGE.h - 18 && imgW > CONTENT_W * 0.62) {
+      imgW -= 6;
+      imgH = imgW * ratio;
+      summaryH = estimateSummaryHeight(summary.body.length, false);
+      blockH = imgH + summaryH + 10;
+    }
+
+    const imgX = PAGE.margin + (CONTENT_W - imgW) / 2;
+    doc.addImage(imgData, "PNG", imgX, y, imgW, imgH);
+    y += imgH + 2;
+
+    autoTable(doc, {
+      startY: y,
+      head: [summary.head],
+      body: summary.body,
+      theme: "grid",
+      headStyles: {
+        fillColor: C.primarySoft,
+        textColor: C.primary,
+        fontSize: 8,
+        fontStyle: "bold",
+        halign: "center",
+      },
+      bodyStyles: {
+        fontSize: 8,
+        textColor: C.text,
+      },
+      alternateRowStyles: { fillColor: [248, 250, 252] },
+      columnStyles: {
+        0: { fontStyle: "bold" },
+      },
+      margin: { left: PAGE.margin, right: PAGE.margin },
+      didParseCell: (data) => {
+        if (
+          data.section === "body" &&
+          data.column.index === 0 &&
+          summary.impactOrder &&
+          summary.impactOrder[data.row.index]
+        ) {
+          data.cell.styles.textColor = IMPACT_RGB[summary.impactOrder[data.row.index]];
+        }
+      },
+    });
+
+    y = (doc as any).lastAutoTable.finalY + 8;
+  }
+
+  const unprodSectionMinH = 12 + 2 * 28 + 4 + 4;
+  if (y + unprodSectionMinH > PAGE.h - 18) {
+    doc.addPage();
+    drawHeader(doc, `Análise de Chuva — ${args.location}`, "Ponderação e improdutividade considerada");
+    y = 38;
+  }
+
+  // === Improdutividade ===
+  y = sectionTitle(doc, y, "Improdutividade considerada (anual)");
+
+  drawUnproductivityCards(doc, args, y);
+};
+
+// ============================================================
 //  PÁGINA 4 — Gráficos (capturados como imagem)
 // ============================================================
 const renderCharts = async (doc: jsPDF, args: ExportArgs) => {
@@ -394,33 +547,107 @@ const renderCharts = async (doc: jsPDF, args: ExportArgs) => {
   // Captura cada bloco com classe .pdf-chart dentro do container
   const chartEls = Array.from(
     args.chartContainer.querySelectorAll<HTMLElement>(".pdf-chart")
-  );
+  ).slice(0, 2);
   if (chartEls.length === 0) return;
 
-  doc.addPage();
-  drawHeader(doc, `Análise de Chuva — ${args.location}`, "Visualizações gráficas");
-  let y = 38;
-  y = sectionTitle(doc, y, "Gráficos do dashboard");
+  const addChartsPage = (continued = false) => {
+    doc.addPage();
+    drawHeader(doc, `Análise de Chuva — ${args.location}`, "Visualizações gráficas");
+    return sectionTitle(
+      doc,
+      38,
+      continued ? "Gráficos do dashboard (continuação)" : "Gráficos do dashboard"
+    );
+  };
 
-  for (const el of chartEls) {
+  for (const [index, el] of chartEls.entries()) {
+    let y = addChartsPage(index > 0);
+
     const canvas = await html2canvas(el, {
       scale: 2,
       backgroundColor: "#ffffff",
       logging: false,
     });
+
+    const chartType = index === 0 ? "monthly" : "distribution";
+    const summary = buildChartSummary(chartType, args);
+
     const imgData = canvas.toDataURL("image/png");
     const ratio = canvas.height / canvas.width;
-    const imgW = CONTENT_W;
-    const imgH = imgW * ratio;
+    let imgW = chartType === "distribution" ? CONTENT_W * 0.84 : CONTENT_W;
+    let imgH = imgW * ratio;
+    let summaryH = estimateSummaryHeight(summary.body.length, Boolean(summary.note));
+    let blockH = imgH + summaryH + 8;
 
-    // Se não couber, abre nova página
-    if (y + imgH > PAGE.h - 18) {
-      doc.addPage();
-      drawHeader(doc, `Análise de Chuva — ${args.location}`, "Visualizações gráficas");
-      y = 38;
+    // Ajusta tamanho para evitar quebra da tabela para outra página.
+    while (y + blockH > PAGE.h - 18 && imgW > CONTENT_W * 0.64) {
+      imgW -= 6;
+      imgH = imgW * ratio;
+      summaryH = estimateSummaryHeight(summary.body.length, Boolean(summary.note));
+      blockH = imgH + summaryH + 8;
     }
-    doc.addImage(imgData, "PNG", PAGE.margin, y, imgW, imgH);
-    y += imgH + 6;
+
+    const imgX = PAGE.margin + (CONTENT_W - imgW) / 2;
+
+    doc.addImage(imgData, "PNG", imgX, y, imgW, imgH);
+    y += imgH + 2;
+
+    autoTable(doc, {
+      startY: y,
+      head: [summary.head],
+      body: summary.body,
+      theme: "grid",
+      headStyles: {
+        fillColor: C.primarySoft,
+        textColor: C.primary,
+        fontSize: 8,
+        fontStyle: "bold",
+        halign: "center",
+      },
+      bodyStyles: {
+        fontSize: 8,
+        textColor: C.text,
+      },
+      alternateRowStyles: { fillColor: [248, 250, 252] },
+      columnStyles: {
+        0: { fontStyle: "bold" },
+      },
+      margin: { left: PAGE.margin, right: PAGE.margin },
+      didParseCell: (data) => {
+        if (
+          data.section === "body" &&
+          summary.rowIntensity &&
+          summary.rowIntensity[data.row.index] !== undefined
+        ) {
+          const values = summary.rowIntensity;
+          const min = Math.min(...values);
+          const max = Math.max(...values);
+          const val = summary.rowIntensity[data.row.index];
+          const t = max - min > 0 ? (val - min) / (max - min) : 0;
+          data.cell.styles.fillColor = mixColor(C.primarySoft, C.primary, t);
+          data.cell.styles.textColor = t > 0.72 ? C.white : C.text;
+          data.cell.styles.fontStyle = "bold";
+        }
+
+        if (
+          data.section === "body" &&
+          data.column.index === 0 &&
+          summary.impactOrder &&
+          summary.impactOrder[data.row.index]
+        ) {
+          data.cell.styles.textColor = IMPACT_RGB[summary.impactOrder[data.row.index]];
+        }
+      },
+    });
+
+    y = (doc as any).lastAutoTable.finalY + 4;
+
+    if (summary.note) {
+      doc.setFont("helvetica", "italic");
+      doc.setFontSize(7.5);
+      doc.setTextColor(...C.muted);
+      doc.text(summary.note, PAGE.margin, y);
+    }
   }
 };
 
@@ -432,7 +659,7 @@ export async function exportDashboardPdf(args: ExportArgs) {
 
   renderCover(doc, args);
   renderMonthlyImpact(doc, args);
-  renderUnproductivity(doc, args);
+  await renderUnproductivity(doc, args);
   await renderCharts(doc, args);
 
   drawFooter(doc);
