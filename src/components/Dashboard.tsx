@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { forwardRef, useImperativeHandle, useMemo, useRef, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -26,9 +26,17 @@ import {
 } from "@/lib/rainfall";
 import { Slider } from "@/components/ui/slider";
 import { Badge } from "@/components/ui/badge";
+import { exportDashboardPdf } from "@/lib/pdfExport";
 
 interface Props {
   rows: MonthRow[];
+  location: string;
+  estacaoCodigo: string;
+  yearsRange: string;
+}
+
+export interface DashboardHandle {
+  exportPdf: () => Promise<void>;
 }
 
 // Arredonda para o inteiro mais próximo (ex.: 5,4 -> 5; 5,5 -> 6)
