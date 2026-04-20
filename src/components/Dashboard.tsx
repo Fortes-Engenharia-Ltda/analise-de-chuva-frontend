@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { forwardRef, useImperativeHandle, useMemo, useRef, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -26,9 +26,17 @@ import {
 } from "@/lib/rainfall";
 import { Slider } from "@/components/ui/slider";
 import { Badge } from "@/components/ui/badge";
+import { exportDashboardPdf } from "@/lib/pdfExport";
 
 interface Props {
   rows: MonthRow[];
+  location: string;
+  estacaoCodigo: string;
+  yearsRange: string;
+}
+
+export interface DashboardHandle {
+  exportPdf: () => Promise<void>;
 }
 
 // Arredonda para o inteiro mais próximo (ex.: 5,4 -> 5; 5,5 -> 6)
@@ -36,11 +44,28 @@ const fmt = (n: number, d = 1) => n.toLocaleString("pt-BR", { minimumFractionDig
 const fmtCeil = (n: number) => Math.round(n).toLocaleString("pt-BR");
 const pct = (n: number) => `${n.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
 
-export const Dashboard = ({ rows }: Props) => {
+export const Dashboard = forwardRef<DashboardHandle, Props>(
+  ({ rows, location, estacaoCodigo, yearsRange }, ref) => {
   const [weights, setWeights] = useState<Weights>(DEFAULT_WEIGHTS);
+  const chartsRef = useRef<HTMLDivElement>(null);
 
   const monthly = useMemo(() => impactByMonthAvg(rows), [rows]);
   const agg = useMemo(() => aggregate(monthly, weights), [monthly, weights]);
+
+  useImperativeHandle(ref, () => ({
+    exportPdf: async () => {
+      await exportDashboardPdf({
+        location,
+        estacaoCodigo,
+        monthsCount: rows.length,
+        yearsRange,
+        monthly,
+        agg,
+        weights,
+        chartContainer: chartsRef.current,
+      });
+    },
+  }), [location, estacaoCodigo, rows.length, yearsRange, monthly, agg, weights]);
 
   const impactedKeys: ImpactKey[] = ["low", "moderate", "high", "severe"];
   const pieData = impactedKeys.map((k) => ({
@@ -57,7 +82,7 @@ export const Dashboard = ({ rows }: Props) => {
   }));
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div ref={chartsRef} className="space-y-6 animate-fade-in">
       {/* Média de dias chuvosos por mês */}
       <div className="bg-card border rounded-2xl p-5 shadow-card print-section">
         <h3 className="font-semibold">Média de dias chuvosos por mês</h3>
@@ -161,7 +186,7 @@ export const Dashboard = ({ rows }: Props) => {
       {/* Gráficos */}
       <div className="grid gap-4 lg:grid-cols-3 print-section">
         {/* Bar mensal stacked */}
-        <div className="lg:col-span-2 bg-card border rounded-2xl p-5 shadow-card print-avoid-break">
+        <div className="lg:col-span-2 bg-card border rounded-2xl p-5 shadow-card print-avoid-break pdf-chart">
           <div className="flex items-center justify-between mb-4">
             <div>
               <h3 className="font-semibold">Média de dias chuvosos por mês</h3>
@@ -194,7 +219,7 @@ export const Dashboard = ({ rows }: Props) => {
         </div>
 
         {/* Pie distribuição */}
-        <div className="bg-card border rounded-2xl p-5 shadow-card print-avoid-break">
+        <div className="bg-card border rounded-2xl p-5 shadow-card print-avoid-break pdf-chart">
           <h3 className="font-semibold">Distribuição por tipologia</h3>
           <p className="text-xs text-muted-foreground mb-2">% sobre dias chuvosos</p>
           <div className="h-[260px]">
@@ -240,7 +265,7 @@ export const Dashboard = ({ rows }: Props) => {
 
       {/* Total de dias por categoria + Pesos */}
       <div className="grid gap-4 lg:grid-cols-3 print-section">
-        <div className="lg:col-span-2 bg-card border rounded-2xl p-5 shadow-card print-avoid-break">
+        <div className="lg:col-span-2 bg-card border rounded-2xl p-5 shadow-card print-avoid-break pdf-chart">
           <h3 className="font-semibold">Total de dias impactados (anual) e ponderação</h3>
           <p className="text-xs text-muted-foreground mb-3">
             Comparação entre dias brutos e dias ponderados por peso
@@ -342,4 +367,5 @@ export const Dashboard = ({ rows }: Props) => {
       </div>
     </div>
   );
-};
+});
+Dashboard.displayName = "Dashboard";
