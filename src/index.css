@@ -118,3 +118,17 @@
   .shadow-card { box-shadow: var(--shadow-card); }
   .shadow-elevated { box-shadow: var(--shadow-elevated); }
 }
+
+/* Impressão / Exportação PDF */
+@media print {
+  @page { size: A4; margin: 14mm; }
+  html, body { background: #fff !important; }
+  .no-print { display: none !important; }
+  header, footer { display: none !important; }
+  [role="tablist"] { display: none !important; }
+  .shadow-card, .shadow-elevated { box-shadow: none !important; }
+  .border { border-color: #d1d5db !important; }
+  main { padding: 0 !important; }
+  .print-break-avoid { break-inside: avoid; page-break-inside: avoid; }
+  .recharts-wrapper { page-break-inside: avoid; }
+}
