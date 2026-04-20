@@ -59,7 +59,7 @@ export const Dashboard = ({ rows }: Props) => {
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Média de dias chuvosos por mês */}
-      <div className="bg-card border rounded-2xl p-5 shadow-card">
+      <div className="bg-card border rounded-2xl p-5 shadow-card print-section">
         <h3 className="font-semibold">Média de dias chuvosos por mês</h3>
         <p className="text-xs text-muted-foreground mb-3">Média dos últimos 15 anos</p>
         <div className="grid grid-cols-6 lg:grid-cols-12 gap-2">
@@ -75,7 +75,7 @@ export const Dashboard = ({ rows }: Props) => {
       </div>
 
       {/* Tabela: Média de dias / impacto por mês */}
-      <div className="bg-card border rounded-2xl shadow-card overflow-hidden">
+      <div className="bg-card border rounded-2xl shadow-card overflow-hidden print-section">
         <div className="bg-primary text-primary-foreground px-5 py-3">
           <h3 className="font-semibold text-sm uppercase tracking-wide text-center">
             Média de dias / impacto por mês
@@ -133,7 +133,7 @@ export const Dashboard = ({ rows }: Props) => {
       </div>
 
       {/* Totais por categoria + Ponderado por categoria */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 print-section">
         {impactedKeys.map((k) => (
           <div key={`tot-${k}`} className="rounded-2xl border bg-card p-5 shadow-card">
             <div className="flex items-center gap-2 mb-1">
@@ -159,9 +159,9 @@ export const Dashboard = ({ rows }: Props) => {
       </div>
 
       {/* Gráficos */}
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid gap-4 lg:grid-cols-3 print-section">
         {/* Bar mensal stacked */}
-        <div className="lg:col-span-2 bg-card border rounded-2xl p-5 shadow-card">
+        <div className="lg:col-span-2 bg-card border rounded-2xl p-5 shadow-card print-avoid-break">
           <div className="flex items-center justify-between mb-4">
             <div>
               <h3 className="font-semibold">Média de dias chuvosos por mês</h3>
@@ -194,7 +194,7 @@ export const Dashboard = ({ rows }: Props) => {
         </div>
 
         {/* Pie distribuição */}
-        <div className="bg-card border rounded-2xl p-5 shadow-card">
+        <div className="bg-card border rounded-2xl p-5 shadow-card print-avoid-break">
           <h3 className="font-semibold">Distribuição por tipologia</h3>
           <p className="text-xs text-muted-foreground mb-2">% sobre dias chuvosos</p>
           <div className="h-[260px]">
@@ -239,8 +239,8 @@ export const Dashboard = ({ rows }: Props) => {
       </div>
 
       {/* Total de dias por categoria + Pesos */}
-      <div className="grid gap-4 lg:grid-cols-3">
-        <div className="lg:col-span-2 bg-card border rounded-2xl p-5 shadow-card">
+      <div className="grid gap-4 lg:grid-cols-3 print-section">
+        <div className="lg:col-span-2 bg-card border rounded-2xl p-5 shadow-card print-avoid-break">
           <h3 className="font-semibold">Total de dias impactados (anual) e ponderação</h3>
           <p className="text-xs text-muted-foreground mb-3">
             Comparação entre dias brutos e dias ponderados por peso
@@ -268,7 +268,7 @@ export const Dashboard = ({ rows }: Props) => {
           </div>
         </div>
 
-        <div className="bg-card border rounded-2xl p-5 shadow-card">
+        <div className="bg-card border rounded-2xl p-5 shadow-card print-avoid-break">
           <div className="flex items-center justify-between mb-1">
             <h3 className="font-semibold">Pesos por categoria</h3>
             <Badge variant="outline" className="text-[10px]">Editável</Badge>
@@ -299,7 +299,7 @@ export const Dashboard = ({ rows }: Props) => {
       </div>
 
       {/* Indicadores de improdutividade */}
-      <div className="bg-card border rounded-2xl p-5 shadow-card">
+      <div className="bg-card border rounded-2xl p-5 shadow-card print-section">
         <div className="flex items-center gap-2 mb-1">
           <Activity className="w-4 h-4 text-secondary" />
           <h3 className="font-semibold">Improdutividade considerada (anual)</h3>
