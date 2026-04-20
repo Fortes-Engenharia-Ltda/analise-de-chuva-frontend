@@ -1,11 +1,12 @@
 import { useMemo, useState } from "react";
-import { ArrowLeft, BarChart3, Database } from "lucide-react";
+import { ArrowLeft, BarChart3, Database, Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { UploadScreen } from "@/components/UploadScreen";
 import { MetadataBar } from "@/components/MetadataBar";
 import { Dashboard } from "@/components/Dashboard";
 import { DataTables } from "@/components/DataTables";
+import { ImpactLegend } from "@/components/ImpactLegend";
 import { filterByYears, type ParsedFile } from "@/lib/rainfall";
 
 const Index = () => {
@@ -35,7 +36,7 @@ const Index = () => {
 
   return (
     <div className="min-h-screen surface-soft">
-      <header className="border-b bg-card/60 backdrop-blur-sm sticky top-0 z-20">
+      <header className="border-b bg-card/60 backdrop-blur-sm sticky top-0 z-20 no-print">
         <div className="container max-w-7xl flex items-center justify-between py-4">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-lg gradient-rain flex items-center justify-center shadow-card">
@@ -50,17 +51,24 @@ const Index = () => {
               </p>
             </div>
           </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              setData(null);
-              setLocation(null);
-            }}
-          >
-            <ArrowLeft className="w-4 h-4 mr-1.5" />
-            Nova análise
-          </Button>
+          <div className="flex items-center gap-2">
+            <ImpactLegend />
+            <Button variant="outline" size="sm" onClick={() => window.print()}>
+              <Printer className="w-4 h-4 mr-1.5" />
+              Exportar PDF
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setData(null);
+                setLocation(null);
+              }}
+            >
+              <ArrowLeft className="w-4 h-4 mr-1.5" />
+              Nova análise
+            </Button>
+          </div>
         </div>
       </header>
 
