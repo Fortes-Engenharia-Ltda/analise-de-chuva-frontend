@@ -5,7 +5,7 @@ import { IMPACT_COLORS, IMPACT_LABELS, type ImpactKey } from "@/lib/rainfall";
 
 const ROWS: { key: ImpactKey; range: string; desc: string }[] = [
   { key: "none", range: "0 – 2 mm", desc: "Volume pluviométrico que não impacta a obra" },
-  { key: "low", range: "2 – 5 mm", desc: "Volume pluviométrico com baixo impacto (pequenas interrupções pontuais)" },
+  { key: "low", range: "2 – 10 mm", desc: "Volume pluviométrico com baixo impacto (pequenas interrupções pontuais)" },
   { key: "moderate", range: "10 – 15 mm", desc: "Volume que pode impactar ~0,5 dia de obra" },
   { key: "high", range: "15 – 20 mm", desc: "Volume que pode impactar 1 dia de obra" },
   { key: "severe", range: "> 20 mm", desc: "Volume que pode impactar 2 dias de obra ou mais (em obras com grande volume de terraplenagem, considerar 3 dias de impacto)" },
