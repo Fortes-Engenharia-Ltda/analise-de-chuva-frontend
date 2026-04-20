@@ -106,7 +106,13 @@ const Index = () => {
             </TabsTrigger>
           </TabsList>
           <TabsContent value="dashboard" className="mt-4">
-            <Dashboard rows={filteredRows} />
+            <Dashboard
+              ref={dashboardRef}
+              rows={filteredRows}
+              location={location}
+              estacaoCodigo={data.header.estacaoCodigo}
+              yearsRange={yearsRange}
+            />
           </TabsContent>
           <TabsContent value="data" className="mt-4">
             <DataTables rows={filteredRows} />
