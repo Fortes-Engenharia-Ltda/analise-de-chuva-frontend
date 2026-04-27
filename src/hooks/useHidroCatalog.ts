@@ -35,11 +35,16 @@ export function useHidroCatalog({
     enabled: enabled && !!ufSigla,
   });
 
+  const municipioSelecionado = useMemo(
+    () => municipiosQuery.data?.find((municipio) => municipio.codigo === municipioCodigo) ?? null,
+    [municipiosQuery.data, municipioCodigo],
+  );
+
   const estacoesQuery = useQuery({
-    queryKey: ["hidro", "catalog", "estacoes", feature, municipioCodigo],
-    queryFn: () => fetchHidroEstacoesByMunicipio(municipioCodigo, feature),
+    queryKey: ["hidro", "catalog", "estacoes", feature, ufSigla, municipioCodigo, municipioSelecionado?.nome],
+    queryFn: () => fetchHidroEstacoesByMunicipio(municipioSelecionado?.nome ?? "", ufSigla),
     staleTime: 1000 * 60 * 15,
-    enabled: enabled && !!municipioCodigo,
+    enabled: enabled && !!municipioCodigo && !!ufSigla && !!municipioSelecionado?.nome,
   });
 
   const autoSelectedStation = useMemo<HidroEstacao | null>(() => {

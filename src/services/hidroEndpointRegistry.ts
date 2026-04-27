@@ -74,7 +74,7 @@ export const HIDRO_ENDPOINTS: Record<HidroEndpointKey, HidroEndpointDefinition> 
   },
   hidroUf: {
     key: "hidroUf",
-    path: "/EstacoesTelemetricas/HidroUF/v1",
+    path: "/api/hidro/ufs",
     label: "UFs",
     category: "catalog",
   },
@@ -192,7 +192,7 @@ export const HIDRO_SERIES_FEATURES: HidroSeriesFeatureKey[] = [
   "hidrosatSerieDados",
 ];
 
-export const DEFAULT_HIDRO_FEATURE: HidroSeriesFeatureKey = "hidroinfoanaSerieTelemetricaAdotada";
+export const DEFAULT_HIDRO_FEATURE: HidroSeriesFeatureKey = "hidroSerieChuva";
 
 export const HIDRO_SERIES_LABELS: Record<HidroSeriesFeatureKey, string> = {
   hidroinfoanaSerieTelemetricaAdotada: "Telemetrica adotada (chuva, nivel e vazao)",

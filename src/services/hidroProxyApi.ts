@@ -1,5 +1,4 @@
 import {
-  getInventoryEndpoint,
   HIDRO_ENDPOINTS,
   type HidroSeriesFeatureKey,
 } from "@/services/hidroEndpointRegistry";
@@ -14,6 +13,7 @@ export interface HidroMunicipio {
   codigo: string;
   nome: string;
   ufSigla: string;
+  ufCodigo: string;
 }
 
 export interface HidroEstacao {
@@ -113,9 +113,9 @@ export async function fetchHidroUfs(): Promise<HidroUf[]> {
 
   return rows
     .map((row) => ({
-      sigla: pickString(row, ["SiglaUF", "UF", "Sigla"]),
-      nome: pickString(row, ["NomeUF", "Nome", "Descricao"]),
-      codigo: pickString(row, ["CodigoUF", "Codigo", "Id"]),
+      sigla: pickString(row, ["Estado_Sigla", "SiglaUF", "UF", "Sigla"]),
+      nome: pickString(row, ["Estado_Nome", "NomeUF", "Nome", "Descricao"]),
+      codigo: pickString(row, ["codigouf", "CodigoUF", "Codigo", "Id"]),
     }))
     .filter((row) => row.sigla && row.nome)
     .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
@@ -129,30 +129,38 @@ export async function fetchHidroMunicipios(ufSigla: string): Promise<HidroMunici
 
   return rows
     .map((row) => ({
-      codigo: pickString(row, ["CodigoMunicipio", "Codigo", "CodMunicipio", "IdMunicipio"]),
-      nome: pickString(row, ["NomeMunicipio", "Municipio", "Nome"]),
-      ufSigla: pickString(row, ["SiglaUF", "UF", "Sigla"]),
+      codigo: pickString(row, [
+        "codigomunicipio",
+        "CodigoMunicipio",
+        "Municipio_Codigo_IBGE",
+        "Codigo",
+        "CodMunicipio",
+        "IdMunicipio",
+      ]),
+      nome: pickString(row, ["Municipio_Nome", "NomeMunicipio", "Municipio", "Nome"]),
+      ufSigla: ufSigla,
+      ufCodigo: pickString(row, ["Estado_Codigo", "EstadoCodigo", "CodigoUF", "Codigo"]),
     }))
     .filter((row) => row.codigo && row.nome)
     .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
 }
 
 export async function fetchHidroEstacoesByMunicipio(
-  municipioCodigo: string,
-  feature: HidroSeriesFeatureKey,
+  municipioNome: string,
+  ufSigla: string,
 ): Promise<HidroEstacao[]> {
-  const endpoint = HIDRO_ENDPOINTS[getInventoryEndpoint(feature)];
-  const rows = await requestList<Record<string, unknown>>(endpoint.path, {
-    CodigoMunicipio: municipioCodigo,
+  const rows = await requestList<Record<string, unknown>>("/api/hidro/estacoes", {
+    municipio: municipioNome,
+    uf: ufSigla,
   });
 
   return rows
     .map((row) => ({
-      codigo: pickString(row, ["CodigoEstacao", "CodigoDaEstacao", "CodEstacao"]),
-      nome: pickString(row, ["NomeEstacao", "Estacao", "Nome"]),
-      municipioCodigo: pickString(row, ["CodigoMunicipio", "CodMunicipio"]),
-      municipioNome: pickString(row, ["NomeMunicipio", "Municipio"]),
-      ufSigla: pickString(row, ["SiglaUF", "UF"]),
+      codigo: pickString(row, ["CodigoEstacao", "codigoestacao", "CodigoDaEstacao", "CodEstacao"]),
+      nome: pickString(row, ["NomeEstacao", "Estacao_Nome", "Estacao", "Nome"]),
+      municipioCodigo: pickString(row, ["CodigoMunicipio", "codigomunicipio", "CodMunicipio"]),
+      municipioNome: pickString(row, ["NomeMunicipio", "Municipio_Nome", "Municipio", "Nome"]),
+      ufSigla: pickString(row, ["SiglaUF", "UF_Estacao", "UF"]),
       tipoMedicao: pickString(row, ["TipoMedicaoChuvas", "TipoMedicao", "Tipo"]),
       nivelConsistencia: pickString(row, ["NivelConsistencia", "Consistencia"]),
     }))
