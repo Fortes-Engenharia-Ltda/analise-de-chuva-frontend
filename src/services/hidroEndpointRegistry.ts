@@ -155,7 +155,7 @@ export const HIDRO_ENDPOINTS: Record<HidroEndpointKey, HidroEndpointDefinition> 
   },
   hidroMunicipio: {
     key: "hidroMunicipio",
-    path: "/EstacoesTelemetricas/HidroMunicipio/v1",
+    path: "/api/hidro/municipios",
     label: "Municipios",
     category: "catalog",
   },

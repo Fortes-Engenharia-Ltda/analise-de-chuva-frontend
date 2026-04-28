@@ -41,6 +41,12 @@ export class HidroApiError extends Error {
 interface HidroItemsEnvelope<T> {
   items?: T[];
   Items?: T[];
+  data?: T[];
+  Data?: T[];
+  results?: T[];
+  Results?: T[];
+  value?: T[];
+  Value?: T[];
 }
 
 interface RequestOptions {
@@ -113,6 +119,18 @@ function normalizeList<T>(payload: unknown): T[] {
   const envelope = payload as HidroItemsEnvelope<T>;
   if (Array.isArray(envelope.items)) return envelope.items;
   if (Array.isArray(envelope.Items)) return envelope.Items;
+  if (Array.isArray(envelope.data)) return envelope.data;
+  if (Array.isArray(envelope.Data)) return envelope.Data;
+  if (Array.isArray(envelope.results)) return envelope.results;
+  if (Array.isArray(envelope.Results)) return envelope.Results;
+  if (Array.isArray(envelope.value)) return envelope.value;
+  if (Array.isArray(envelope.Value)) return envelope.Value;
+
+  const arrayValue = Object.values(payload).find((value) => Array.isArray(value));
+  if (Array.isArray(arrayValue)) {
+    return arrayValue as T[];
+  }
+
   return [];
 }
 
@@ -200,7 +218,7 @@ export async function fetchHidroMunicipios(
 ): Promise<HidroMunicipio[]> {
   const endpoint = HIDRO_ENDPOINTS.hidroMunicipio;
   const rows = await requestList<Record<string, unknown>>(endpoint.path, {
-    SiglaUF: ufSigla,
+    uf: ufSigla,
   }, { signal });
 
   return rows

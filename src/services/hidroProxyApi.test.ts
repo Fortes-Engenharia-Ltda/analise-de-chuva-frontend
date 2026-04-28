@@ -81,12 +81,45 @@ describe("hidroProxyApi municipality mapping", () => {
 
     const result = await fetchHidroMunicipios("RO");
 
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        href: "http://localhost:3000/api/hidro/municipios?uf=RO",
+      }),
+      { method: "GET" },
+    );
     expect(result).toEqual([
       {
         codigo: "1000500",
         nome: "ALTA FLORESTA D'OESTE",
         ufSigla: "RO",
         ufCodigo: "18",
+      },
+    ]);
+  });
+
+  it("accepts municipality payloads wrapped in a data envelope", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      asJsonResponse({
+        data: [
+          {
+            Municipio_Nome: "ALEGRE",
+            codigomunicipio: "3200201",
+            Estado_Codigo: "32",
+          },
+        ],
+      }),
+    );
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await fetchHidroMunicipios("ES");
+
+    expect(result).toEqual([
+      {
+        codigo: "3200201",
+        nome: "ALEGRE",
+        ufSigla: "ES",
+        ufCodigo: "32",
       },
     ]);
   });
