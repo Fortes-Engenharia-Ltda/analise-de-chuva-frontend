@@ -3,6 +3,7 @@ import { mapHidroSeriesToParsedFile } from "@/lib/hidroMappers";
 import {
   fetchHidroSeriesData,
   type HidroEstacao,
+  type HidroSeriesProgress,
 } from "@/services/hidroProxyApi";
 import { type ParsedFile } from "@/lib/rainfall";
 import { type HidroSeriesFeatureKey } from "@/services/hidroEndpointRegistry";
@@ -11,6 +12,7 @@ interface FetchSeriesParams {
   feature: HidroSeriesFeatureKey;
   station: HidroEstacao;
   years?: number;
+  onProgress?: (progress: HidroSeriesProgress) => void;
 }
 
 function formatDate(date: Date) {
@@ -24,6 +26,7 @@ async function fetchAndMapSeries({
   feature,
   station,
   years = 15,
+  onProgress,
 }: FetchSeriesParams): Promise<ParsedFile> {
   const endDate = new Date();
   const startDate = new Date(endDate.getFullYear() - years, endDate.getMonth(), endDate.getDate());
@@ -33,6 +36,7 @@ async function fetchAndMapSeries({
     stationCode: station.codigo,
     startDate: formatDate(startDate),
     endDate: formatDate(endDate),
+    onProgress,
   });
 
   return mapHidroSeriesToParsedFile({

@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fetchHidroEstacoesByMunicipio, fetchHidroMunicipios, fetchHidroUfs } from "@/services/hidroProxyApi";
+import {
+  fetchHidroEstacoesByMunicipio,
+  fetchHidroMunicipios,
+  fetchHidroSeriesData,
+  fetchHidroUfs,
+} from "@/services/hidroProxyApi";
 
 function asJsonResponse(payload: unknown, status = 200) {
   return new Response(JSON.stringify(payload), {
@@ -169,5 +174,101 @@ describe("hidroProxyApi inventory mapping", () => {
         nivelConsistencia: "2",
       },
     ]);
+  });
+});
+
+describe("hidroProxyApi series date windowing", () => {
+  beforeEach(() => {
+    vi.stubEnv("VITE_HIDRO_PROXY_BASE_URL", "http://localhost:3000");
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("requests series in a single call when range fits endpoint max days", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      asJsonResponse({
+        items: [{ id: 1 }],
+      }),
+    );
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await fetchHidroSeriesData({
+      feature: "hidroSerieChuva",
+      stationCode: "123",
+      startDate: "2025-01-01",
+      endDate: "2025-12-31",
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        href: "http://localhost:3000/api/hidro/series?feature=HidroSerieChuva&CodigoDaEstacao=123&DataInicio=2025-01-01&DataFim=2025-12-31",
+      }),
+      { method: "GET" },
+    );
+    expect(result).toEqual([{ id: 1 }]);
+  });
+
+  it("splits series requests into multiple windows when range exceeds endpoint max days", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(asJsonResponse({ items: [{ chunk: 1 }] }))
+      .mockResolvedValueOnce(asJsonResponse({ items: [{ chunk: 2 }] }));
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await fetchHidroSeriesData({
+      feature: "hidroSerieChuva",
+      stationCode: "123",
+      startDate: "2020-01-01",
+      endDate: "2021-01-01",
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    const firstUrl = (fetchMock.mock.calls[0][0] as URL).href;
+    const secondUrl = (fetchMock.mock.calls[1][0] as URL).href;
+
+    expect(firstUrl).toBe(
+      "http://localhost:3000/api/hidro/series?feature=HidroSerieChuva&CodigoDaEstacao=123&DataInicio=2020-01-01&DataFim=2020-12-31",
+    );
+    expect(secondUrl).toBe(
+      "http://localhost:3000/api/hidro/series?feature=HidroSerieChuva&CodigoDaEstacao=123&DataInicio=2021-01-01&DataFim=2021-01-01",
+    );
+    expect(result).toEqual([{ chunk: 1 }, { chunk: 2 }]);
+  });
+
+  it("reports progress as each window is completed", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(asJsonResponse({ items: [{ chunk: 1 }] }))
+      .mockResolvedValueOnce(asJsonResponse({ items: [{ chunk: 2 }] }));
+    const onProgress = vi.fn();
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    await fetchHidroSeriesData({
+      feature: "hidroSerieChuva",
+      stationCode: "123",
+      startDate: "2020-01-01",
+      endDate: "2021-01-01",
+      requestDelayMs: 0,
+      onProgress,
+    });
+
+    expect(onProgress).toHaveBeenCalledTimes(2);
+    expect(onProgress).toHaveBeenNthCalledWith(1, {
+      completedWindows: 1,
+      totalWindows: 2,
+    });
+    expect(onProgress).toHaveBeenNthCalledWith(2, {
+      completedWindows: 2,
+      totalWindows: 2,
+    });
   });
 });

@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
-  fetchHidroEstacoesByMunicipio,
+  fetchHidroEstacoesByMunicipioForFeature,
   fetchHidroMunicipios,
   fetchHidroUfs,
   type HidroEstacao,
@@ -23,15 +23,21 @@ export function useHidroCatalog({
 }: UseHidroCatalogParams) {
   const ufsQuery = useQuery({
     queryKey: ["hidro", "catalog", "ufs"],
-    queryFn: fetchHidroUfs,
+    queryFn: ({ signal }) => fetchHidroUfs(signal),
     staleTime: 1000 * 60 * 60,
+    gcTime: 1000 * 60 * 60 * 24,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
     enabled,
   });
 
   const municipiosQuery = useQuery({
     queryKey: ["hidro", "catalog", "municipios", ufSigla],
-    queryFn: () => fetchHidroMunicipios(ufSigla),
+    queryFn: ({ signal }) => fetchHidroMunicipios(ufSigla, signal),
     staleTime: 1000 * 60 * 30,
+    gcTime: 1000 * 60 * 60 * 6,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
     enabled: enabled && !!ufSigla,
   });
 
@@ -41,9 +47,18 @@ export function useHidroCatalog({
   );
 
   const estacoesQuery = useQuery({
-    queryKey: ["hidro", "catalog", "estacoes", feature, ufSigla, municipioCodigo, municipioSelecionado?.nome],
-    queryFn: () => fetchHidroEstacoesByMunicipio(municipioSelecionado?.nome ?? "", ufSigla),
+    queryKey: ["hidro", "catalog", "estacoes", feature, ufSigla, municipioCodigo],
+    queryFn: ({ signal }) =>
+      fetchHidroEstacoesByMunicipioForFeature(
+        feature,
+        municipioSelecionado?.nome ?? "",
+        ufSigla,
+        signal,
+      ),
     staleTime: 1000 * 60 * 15,
+    gcTime: 1000 * 60 * 60 * 3,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
     enabled: enabled && !!municipioCodigo && !!ufSigla && !!municipioSelecionado?.nome,
   });
 

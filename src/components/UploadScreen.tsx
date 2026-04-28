@@ -23,11 +23,16 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Progress } from "@/components/ui/progress";
 import { toast } from "sonner";
+import { HidroApiError } from "@/services/hidroProxyApi";
 import { parseCsvFile, type ParsedFile } from "@/lib/rainfall";
 import { useHidroCatalog } from "@/hooks/useHidroCatalog";
 import { useHidroSeries } from "@/hooks/useHidroSeries";
-import { getConfiguredHidroApiBaseUrl, type HidroEstacao } from "@/services/hidroProxyApi";
+import {
+  getConfiguredHidroApiBaseUrl,
+  type HidroSeriesProgress,
+} from "@/services/hidroProxyApi";
 import {
   DEFAULT_HIDRO_FEATURE,
   type HidroSeriesFeatureKey,
@@ -70,7 +75,7 @@ export const UploadScreen = ({ onLoaded }: Props) => {
   const [municipioPage, setMunicipioPage] = useState(1);
   const [municipioOpen, setMunicipioOpen] = useState(false);
   const [stationCode, setStationCode] = useState("");
-  const [stationCodeManual, setStationCodeManual] = useState("");
+  const [seriesProgress, setSeriesProgress] = useState<HidroSeriesProgress | null>(null);
 
   const { ufsQuery, municipiosQuery, estacoesQuery, autoSelectedStation } = useHidroCatalog({
     enabled: mode === "api",
@@ -92,8 +97,11 @@ export const UploadScreen = ({ onLoaded }: Props) => {
     if (!selectedUf?.codigo) {
       return municipios;
     }
+    const filtered = municipios.filter((municipio) => municipio.ufCodigo === selectedUf.codigo);
 
-    return municipios.filter((municipio) => municipio.ufCodigo === selectedUf.codigo);
+    // Some API payloads do not populate ufCodigo consistently; if filtering removes everything,
+    // keep the raw list so valid cities still appear.
+    return filtered.length > 0 ? filtered : municipios;
   }, [municipios, selectedUf?.codigo]);
   const selectedMunicipio = useMemo(
     () => municipiosDaUf.find((municipio) => municipio.codigo === municipioCodigo) ?? null,
@@ -103,21 +111,7 @@ export const UploadScreen = ({ onLoaded }: Props) => {
     () => stations.find((station) => station.codigo === stationCode) ?? null,
     [stationCode, stations],
   );
-  const fallbackStation = useMemo<HidroEstacao | null>(() => {
-    const codigo = stationCodeManual.trim();
-    if (!codigo) return null;
-
-    return {
-      codigo,
-      nome: "",
-      municipioCodigo: municipioCodigo,
-      municipioNome: selectedMunicipio?.nome ?? "",
-      ufSigla,
-      tipoMedicao: "1",
-      nivelConsistencia: "2",
-    };
-  }, [municipioCodigo, municipioSearch, selectedMunicipio?.nome, stationCodeManual, ufSigla]);
-  const activeStation = selectedStation ?? fallbackStation;
+  const activeStation = selectedStation;
   const apiLocation = useMemo(() => {
     if (!activeStation) return "";
     const municipioNome = selectedMunicipio?.nome || activeStation.municipioNome;
@@ -163,7 +157,6 @@ export const UploadScreen = ({ onLoaded }: Props) => {
   useEffect(() => {
     setMunicipioCodigo("");
     setStationCode("");
-    setStationCodeManual("");
     setMunicipioSearch("");
     setMunicipioPage(1);
     setMunicipioOpen(false);
@@ -171,8 +164,13 @@ export const UploadScreen = ({ onLoaded }: Props) => {
 
   useEffect(() => {
     setStationCode("");
-    setStationCodeManual("");
   }, [municipioCodigo]);
+
+  useEffect(() => {
+    if (mode !== "api") {
+      setSeriesProgress(null);
+    }
+  }, [mode]);
 
   useEffect(() => {
     setMunicipioPage(1);
@@ -218,9 +216,11 @@ export const UploadScreen = ({ onLoaded }: Props) => {
     if (!activeStation) return toast.error("Selecione ou informe a estação de referência");
 
     try {
+      setSeriesProgress(null);
       const data = await seriesMutation.mutateAsync({
         feature,
         station: activeStation,
+        onProgress: setSeriesProgress,
       });
       if (data.rows.length === 0) {
         toast.error("A API não retornou dados válidos para o período selecionado");
@@ -230,12 +230,50 @@ export const UploadScreen = ({ onLoaded }: Props) => {
       toast.success(`${data.rows.length} meses carregados via API`);
     } catch (err) {
       console.error(err);
-      const message = err instanceof Error ? err.message : "Falha ao consultar dados da API";
-      toast.error(message);
+      // Friendly handling for station-feature mismatch returned by backend
+      if (err instanceof HidroApiError) {
+        // try to extract nested info
+        const payload = (err.details as any)?.payload ?? (err.details as any) ?? null;
+        const nestedError = payload?.error ?? null;
+        const code = err.code ?? nestedError?.code ?? payload?.code;
+        const requestId = (err.details && (err.details as any).requestId) || payload?.requestId || null;
+
+        if (code === "STATION_FEATURE_MISMATCH" || err.statusCode === 422) {
+          toast.error("Esta estação não é compatível com a consulta. Tente outra estação.");
+        } else if (code === "ANA_UPSTREAM_ERROR" || nestedError || (payload && payload.upstreamData)) {
+          // Friendly message for ANA upstream errors, avoid showing raw JSON
+          toast.error(
+            `Consulta rejeitada pela fonte ANA. Tente outra estação.${requestId ? ` (id: ${requestId})` : ""}`,
+          );
+        } else {
+          // Fallback to message but ensure it's a string
+          const message = typeof err.message === "string" ? err.message : "Falha ao consultar dados da API";
+          const raw = message.trim();
+          if (raw.startsWith("{") && raw.includes("ANA_UPSTREAM_ERROR")) {
+            toast.error("Consulta rejeitada pela fonte ANA. Tente outra estação.");
+          } else {
+            toast.error(message);
+          }
+        }
+      } else {
+        const message = err instanceof Error ? err.message : "Falha ao consultar dados da API";
+        const raw = typeof message === "string" ? message.trim() : "";
+        if (raw.startsWith("{") && raw.includes("ANA_UPSTREAM_ERROR")) {
+          toast.error("Consulta rejeitada pela fonte ANA. Tente outra estação.");
+        } else {
+          toast.error(message);
+        }
+      }
+    } finally {
+      setSeriesProgress(null);
     }
   };
 
   const isSubmitting = mode === "csv" ? loadingCsv : seriesMutation.isPending;
+  const apiProgressPercent =
+    seriesProgress && seriesProgress.totalWindows > 0
+      ? Math.round((seriesProgress.completedWindows / seriesProgress.totalWindows) * 100)
+      : 0;
 
   return (
     <div className="min-h-screen surface-soft flex items-center justify-center p-6">
@@ -444,46 +482,32 @@ export const UploadScreen = ({ onLoaded }: Props) => {
 
               <div className="space-y-2">
                 <Label>Estação de referência</Label>
-                {stations.length > 0 ? (
-                  <Select
-                    value={stationCode}
-                    onValueChange={(value) => {
-                      setStationCode(value);
-                      setStationCodeManual("");
-                    }}
-                    disabled={!municipioCodigo || estacoesQuery.isLoading}
-                  >
-                    <SelectTrigger>
-                      <SelectValue
-                        placeholder={
-                          !municipioCodigo
-                            ? "Selecione a cidade primeiro"
-                            : estacoesQuery.isLoading
-                              ? "Carregando estações..."
+                <Select
+                  value={stationCode}
+                  onValueChange={setStationCode}
+                  disabled={!municipioCodigo || estacoesQuery.isLoading || stations.length === 0}
+                >
+                  <SelectTrigger>
+                    <SelectValue
+                      placeholder={
+                        !municipioCodigo
+                          ? "Selecione a cidade primeiro"
+                          : estacoesQuery.isLoading
+                            ? "Carregando estações..."
+                            : stations.length === 0
+                              ? "Nenhuma estação compatível encontrada"
                               : "Selecione a estação"
-                        }
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {stations.map((station) => (
-                        <SelectItem key={station.codigo} value={station.codigo}>
-                          {station.codigo} - {station.nome || "Sem nome"}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                ) : (
-                  <Input
-                    value={stationCodeManual}
-                    onChange={(e) => setStationCodeManual(e.target.value)}
-                    placeholder={
-                      !municipioCodigo
-                        ? "Selecione a cidade primeiro"
-                        : "Digite o código da estação"
-                    }
-                    disabled={!municipioCodigo}
-                  />
-                )}
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {stations.map((station) => (
+                      <SelectItem key={station.codigo} value={station.codigo}>
+                        {station.codigo} - {station.nome || "Sem nome"}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
 
                 {autoSelectedStation && (
                   <p className="text-xs text-muted-foreground">
@@ -492,7 +516,7 @@ export const UploadScreen = ({ onLoaded }: Props) => {
                 )}
                 {municipioCodigo && stations.length === 0 && !estacoesQuery.isLoading && !estacoesQuery.isError && (
                   <p className="text-xs text-muted-foreground">
-                    Nenhuma estação foi encontrada para esta cidade. Informe o código manualmente.
+                    Nenhuma estação compatível foi encontrada para esta cidade.
                   </p>
                 )}
                 {municipioCodigo && estacoesQuery.isError && (
@@ -507,7 +531,10 @@ export const UploadScreen = ({ onLoaded }: Props) => {
           <Button type="submit" className="w-full" disabled={isSubmitting}>
             {isSubmitting ? (
               <>
-                <Loader2 className="w-4 h-4 animate-spin" /> Processando...
+                <Loader2 className="w-4 h-4 animate-spin" />
+                {mode === "api" && seriesProgress
+                  ? ` Consultando API (${seriesProgress.completedWindows}/${seriesProgress.totalWindows})...`
+                  : " Processando..."}
               </>
             ) : mode === "csv" ? (
               "Analisar dados"
@@ -515,6 +542,16 @@ export const UploadScreen = ({ onLoaded }: Props) => {
               "Consultar API e analisar"
             )}
           </Button>
+
+          {mode === "api" && isSubmitting && seriesProgress && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span>Progresso da consulta por janelas</span>
+                <span>{seriesProgress.completedWindows}/{seriesProgress.totalWindows} ({apiProgressPercent}%)</span>
+              </div>
+              <Progress value={apiProgressPercent} aria-label="Progresso da consulta da API" />
+            </div>
+          )}
         </form>
 
         <p className="text-xs text-center text-muted-foreground mt-6">
