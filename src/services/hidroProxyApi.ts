@@ -97,9 +97,12 @@ function resolveSeriesFeatureParam(feature: HidroSeriesFeatureKey): string {
   }
 }
 
-const configuredBase = (import.meta.env.VITE_HIDRO_PROXY_BASE_URL ?? "").trim();
+const configuredProdBase = (import.meta.env.VITE_HIDRO_PROXY_BASE_URL ?? "").trim();
+const configuredDevLocalBase = (import.meta.env.VITE_HIDRO_PROXY_BASE_URL_LOCAL ?? "").trim();
 const fallbackDevBase = import.meta.env.DEV ? "http://localhost:3000" : "";
-const defaultBase = configuredBase || fallbackDevBase;
+const defaultBase = import.meta.env.DEV
+  ? (configuredDevLocalBase || configuredProdBase || fallbackDevBase)
+  : configuredProdBase;
 
 export function getConfiguredHidroApiBaseUrl(): string {
   return defaultBase;
