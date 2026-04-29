@@ -22,20 +22,39 @@ function formatDate(date: Date) {
   return `${yyyy}-${mm}-${dd}`;
 }
 
+function parseHidroDate(value?: string): Date | null {
+  if (!value) return null;
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return null;
+  const [, yyyy, mm, dd] = match;
+  const date = new Date(Number(yyyy), Number(mm) - 1, Number(dd));
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function buildCandidateRange(station: HidroEstacao, years: number) {
+  const today = new Date();
+  const periodEnd = parseHidroDate(station.periodoChuvaFim);
+  const endDate = periodEnd && periodEnd < today ? periodEnd : today;
+  const startDate = new Date(endDate.getFullYear() - years + 1, 0, 1);
+
+  return {
+    startDate: formatDate(startDate),
+    endDate: formatDate(endDate),
+  };
+}
+
 async function fetchAndMapSeries({
   feature,
   station,
   years = 15,
   onProgress,
 }: FetchSeriesParams): Promise<ParsedFile> {
-  const endDate = new Date();
-  const startDate = new Date(endDate.getFullYear() - years, endDate.getMonth(), endDate.getDate());
-
+  const range = buildCandidateRange(station, years);
   const series = await fetchHidroSeriesData({
     feature,
     stationCode: station.codigo,
-    startDate: formatDate(startDate),
-    endDate: formatDate(endDate),
+    startDate: range.startDate,
+    endDate: range.endDate,
     onProgress,
   });
 

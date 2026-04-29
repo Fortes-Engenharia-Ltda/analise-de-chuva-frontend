@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   fetchHidroEstacoesByMunicipio,
+  fetchHidroLatestAvailableDate,
   fetchHidroMunicipios,
   fetchHidroSeriesData,
   fetchHidroUfs,
+  type HidroEstacao,
 } from "@/services/hidroProxyApi";
 
 function asJsonResponse(payload: unknown, status = 200) {
@@ -147,10 +149,12 @@ describe("hidroProxyApi inventory mapping", () => {
             NomeMunicipio: "Alegre",
             SiglaUF: "ES",
             TipoMedicaoChuvas: "1",
-            NivelConsistencia: "2",
-          },
-        ],
-      }),
+          NivelConsistencia: "2",
+          Data_Periodo_Pluviometro_Inicio: "2000-01-01 00:00:00.0",
+          Data_Periodo_Pluviometro_Fim: null,
+        },
+      ],
+    }),
     );
 
     vi.stubGlobal("fetch", fetchMock);
@@ -172,6 +176,8 @@ describe("hidroProxyApi inventory mapping", () => {
         ufSigla: "ES",
         tipoMedicao: "1",
         nivelConsistencia: "2",
+        periodoChuvaInicio: "2000-01-01 00:00:00.0",
+        periodoChuvaFim: "",
       },
     ]);
   });
@@ -187,6 +193,8 @@ describe("hidroProxyApi inventory mapping", () => {
             UF_Estacao: "ES",
             TipoMedicaoChuvas: "1",
             NivelConsistencia: "2",
+            Tipo_Estacao_Pluviometro: "1",
+            Data_Periodo_Pluviometro_Inicio: "2014-01-01 00:00:00.0",
           },
         ],
       }),
@@ -205,6 +213,8 @@ describe("hidroProxyApi inventory mapping", () => {
         ufSigla: "ES",
         tipoMedicao: "1",
         nivelConsistencia: "2",
+        periodoChuvaInicio: "2014-01-01 00:00:00.0",
+        periodoChuvaFim: "",
       },
     ]);
   });
@@ -303,5 +313,52 @@ describe("hidroProxyApi series date windowing", () => {
       completedWindows: 2,
       totalWindows: 2,
     });
+  });
+});
+
+describe("hidroProxyApi latest available date", () => {
+  beforeEach(() => {
+    vi.stubEnv("VITE_HIDRO_PROXY_BASE_URL", "http://localhost:3000");
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("finds the latest real day in monthly ANA rows", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(asJsonResponse({ items: [] }))
+      .mockResolvedValueOnce(asJsonResponse({
+        items: [
+          {
+            Data_Hora_Dado: "2024-12-01 00:00:00.0",
+            Chuva_01: "1.0",
+            Chuva_30: "0.0",
+            Chuva_31: "2.5",
+          },
+        ],
+      }));
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const station: HidroEstacao = {
+      codigo: "2041003",
+      nome: "RIVE",
+      municipioCodigo: "18002000",
+      municipioNome: "ALEGRE",
+      ufSigla: "ES",
+      tipoMedicao: "1",
+      nivelConsistencia: "2",
+      periodoChuvaInicio: "2010-01-01 00:00:00.0",
+      periodoChuvaFim: "",
+    };
+
+    const result = await fetchHidroLatestAvailableDate("hidroSerieChuva", station);
+
+    expect(result).toBe("2024-12-31");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });

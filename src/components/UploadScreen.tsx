@@ -1,4 +1,5 @@
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   ChevronDown,
   ChevronLeft,
@@ -10,6 +11,7 @@ import {
   Upload,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -30,6 +32,7 @@ import { parseCsvFile, type ParsedFile } from "@/lib/rainfall";
 import { useHidroCatalog } from "@/hooks/useHidroCatalog";
 import { useHidroSeries } from "@/hooks/useHidroSeries";
 import {
+  fetchHidroLatestAvailableDate,
   getConfiguredHidroApiBaseUrl,
   type HidroSeriesProgress,
 } from "@/services/hidroProxyApi";
@@ -60,6 +63,29 @@ function getCatalogErrorMessage(error: unknown) {
   }
 
   return "Não foi possível carregar os dados da API agora. Tente novamente em alguns segundos.";
+}
+
+function formatInventoryDate(value?: string) {
+  if (!value) return "";
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return value;
+  const [, yyyy, mm] = match;
+  return `${mm}/${yyyy}`;
+}
+
+function formatStationPeriod(
+  station: { periodoChuvaInicio?: string; periodoChuvaFim?: string } | null,
+  latestAvailableDate?: string | null,
+) {
+  if (!station) return "";
+
+  const start = formatInventoryDate(station.periodoChuvaInicio);
+  const end = formatInventoryDate(latestAvailableDate ?? station.periodoChuvaFim);
+
+  if (start && end) return `${start} - ${end}`;
+  if (start) return `${start} - ...`;
+  if (end) return `- ${end}`;
+  return "Período não informado";
 }
 
 export const UploadScreen = ({ onLoaded }: Props) => {
@@ -112,17 +138,23 @@ export const UploadScreen = ({ onLoaded }: Props) => {
     [stationCode, stations],
   );
   const activeStation = selectedStation;
-  const apiLocation = useMemo(() => {
+  const latestStationDateQuery = useQuery({
+    queryKey: ["hidro", "station", "latest-date", feature, activeStation?.codigo],
+    queryFn: ({ signal }) => fetchHidroLatestAvailableDate(feature, activeStation!, signal),
+    staleTime: 1000 * 60 * 30,
+    gcTime: 1000 * 60 * 60 * 6,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    enabled: mode === "api" && !!activeStation,
+  });
+  const selectedStationPeriod = useMemo(() => {
     if (!activeStation) return "";
-    const municipioNome = selectedMunicipio?.nome || activeStation.municipioNome;
-    const uf = activeStation.ufSigla || ufSigla;
-    const localBase = [municipioNome, uf].filter(Boolean).join(" - ");
-    if (localBase) {
-      return `${localBase} · Estação ${activeStation.codigo}`;
+    if (latestStationDateQuery.isLoading && !latestStationDateQuery.data) {
+      const start = formatInventoryDate(activeStation.periodoChuvaInicio);
+      return start ? `${start} - ...` : "Consultando...";
     }
-    return `Estação ${activeStation.codigo}`;
-  }, [activeStation, selectedMunicipio?.nome, ufSigla]);
-
+    return formatStationPeriod(activeStation, latestStationDateQuery.data);
+  }, [activeStation, latestStationDateQuery.data, latestStationDateQuery.isLoading]);
   const filteredMunicipios = useMemo(() => {
     if (!deferredMunicipioSearch) {
       return municipiosDaUf;
@@ -226,7 +258,13 @@ export const UploadScreen = ({ onLoaded }: Props) => {
         toast.error("A API não retornou dados válidos para o período selecionado");
         return;
       }
-      onLoaded(apiLocation, data);
+      const loadedMunicipioNome = selectedMunicipio?.nome || activeStation.municipioNome;
+      const loadedUf = activeStation.ufSigla || ufSigla;
+      const loadedLocationBase = [loadedMunicipioNome, loadedUf].filter(Boolean).join(" - ");
+      const loadedLocation = loadedLocationBase
+        ? `${loadedLocationBase} · Estação ${activeStation.codigo}`
+        : `Estação ${activeStation.codigo}`;
+      onLoaded(loadedLocation, data);
       toast.success(`${data.rows.length} meses carregados via API`);
     } catch (err) {
       console.error(err);
@@ -509,6 +547,17 @@ export const UploadScreen = ({ onLoaded }: Props) => {
                   </SelectContent>
                 </Select>
 
+                {activeStation && (
+                  <Badge variant="outline" className="w-fit rounded-md px-2 py-1 font-normal text-muted-foreground">
+                    Período de referência: {selectedStationPeriod}
+                  </Badge>
+                )}
+                {activeStation && latestStationDateQuery.isError && (
+                  <p className="text-xs text-muted-foreground">
+                    Não foi possível confirmar a última data real agora.
+                  </p>
+                )}
+
                 {autoSelectedStation && (
                   <p className="text-xs text-muted-foreground">
                     Estação selecionada automaticamente: {autoSelectedStation.codigo}
@@ -555,7 +604,7 @@ export const UploadScreen = ({ onLoaded }: Props) => {
         </form>
 
         <p className="text-xs text-center text-muted-foreground mt-6">
-          Histórico considerado: últimos 15 anos.
+          Histórico considerado: últimos 15 anos disponíveis.
         </p>
       </div>
     </div>

@@ -24,6 +24,8 @@ export interface HidroEstacao {
   ufSigla: string;
   tipoMedicao: string;
   nivelConsistencia: string;
+  periodoChuvaInicio?: string;
+  periodoChuvaFim?: string;
 }
 
 export class HidroApiError extends Error {
@@ -60,6 +62,7 @@ export interface HidroSeriesRequest {
   endDate: string;
   onProgress?: (progress: HidroSeriesProgress) => void;
   requestDelayMs?: number;
+  signal?: AbortSignal;
 }
 
 export interface HidroSeriesProgress {
@@ -69,6 +72,15 @@ export interface HidroSeriesProgress {
 
 const DEFAULT_SERIES_MAX_RANGE_DAYS = 3660;
 const DEFAULT_SERIES_REQUEST_DELAY_MS = 120;
+const SERIES_DATE_KEYS = [
+  "Data",
+  "DataLeitura",
+  "DataLeituraUTC",
+  "Data_Hora_Medicao",
+  "Data_Hora_Dado",
+  "DataHora",
+  "DataMedicao",
+] as const;
 
 function resolveSeriesFeatureParam(feature: HidroSeriesFeatureKey): string {
   switch (feature) {
@@ -142,6 +154,93 @@ function makeUrl(path: string, params: Record<string, string | undefined>) {
     }
   }
   return url;
+}
+
+function isPluviometricStation(row: Record<string, unknown>): boolean {
+  const tipoEstacao = pickString(row, ["Tipo_Estacao", "TipoEstacao"]).toLowerCase();
+  const tipoPluviometro = pickString(row, ["Tipo_Estacao_Pluviometro", "TipoEstacaoPluviometro"]);
+  const periodoInicio = pickString(row, [
+    "Data_Periodo_Pluviometro_Inicio",
+    "DataPeriodoPluviometroInicio",
+  ]);
+
+  return tipoEstacao.includes("pluv") || tipoPluviometro === "1" || !!periodoInicio;
+}
+
+function compareStations(a: HidroEstacao, b: HidroEstacao) {
+  const aStart = a.periodoChuvaInicio || "9999";
+  const bStart = b.periodoChuvaInicio || "9999";
+  const byStart = aStart.localeCompare(bStart);
+  return byStart || a.nome.localeCompare(b.nome, "pt-BR");
+}
+
+function parseSeriesDate(raw: unknown): Date | null {
+  if (!raw) return null;
+  const text = String(raw).trim();
+  const br = text.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+  if (br) {
+    const [, dd, mm, yyyy] = br;
+    return new Date(Number(yyyy), Number(mm) - 1, Number(dd));
+  }
+
+  const iso = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) {
+    const [, yyyy, mm, dd] = iso;
+    return new Date(Number(yyyy), Number(mm) - 1, Number(dd));
+  }
+
+  const fallback = new Date(text);
+  if (Number.isNaN(fallback.getTime())) return null;
+  return new Date(fallback.getFullYear(), fallback.getMonth(), fallback.getDate());
+}
+
+function parseSeriesRain(raw: unknown): number | null {
+  if (raw === null || raw === undefined) return null;
+  const normalized = String(raw).trim().replace(",", ".");
+  if (!normalized || normalized === "-") return null;
+  const value = Number.parseFloat(normalized);
+  return Number.isNaN(value) ? null : value;
+}
+
+function getLatestDateFromRow(row: Record<string, unknown>): Date | null {
+  const baseDate = parseSeriesDate(
+    SERIES_DATE_KEYS.map((key) => row[key]).find((value) => value !== null && value !== undefined && String(value).trim() !== ""),
+  );
+  if (!baseDate) return null;
+
+  let latestMonthlyDate: Date | null = null;
+  for (let day = 31; day >= 1; day -= 1) {
+    const key = String(day).padStart(2, "0");
+    const rain = parseSeriesRain(
+      row[`Chuva_${key}`] ?? row[`Chuva${key}`] ?? row[`chuva_${key}`] ?? row[`chuva${key}`],
+    );
+
+    if (rain !== null) {
+      latestMonthlyDate = new Date(baseDate.getFullYear(), baseDate.getMonth(), day);
+      break;
+    }
+  }
+
+  if (latestMonthlyDate) return latestMonthlyDate;
+
+  const singleRain = parseSeriesRain(
+    row.Chuva_Adotada ??
+    row.ChuvaAdotada ??
+    row.Chuva ??
+    row.chuva ??
+    row.Precipitacao ??
+    row.Precipitacao_Adotada ??
+    row.Valor ??
+    row.valor,
+  );
+
+  return singleRain !== null ? baseDate : null;
+}
+
+function parseInventoryYear(value?: string): number | null {
+  if (!value) return null;
+  const match = value.match(/^(\d{4})-/);
+  return match ? Number(match[1]) : null;
 }
 
 async function requestList<T>(
@@ -258,9 +357,11 @@ export async function fetchHidroEstacoesByMunicipio(
       ufSigla: pickString(row, ["SiglaUF", "UF_Estacao", "UF"]),
       tipoMedicao: pickString(row, ["TipoMedicaoChuvas", "TipoMedicao", "Tipo"]),
       nivelConsistencia: pickString(row, ["NivelConsistencia", "Consistencia"]),
+      periodoChuvaInicio: pickString(row, ["Data_Periodo_Pluviometro_Inicio"]),
+      periodoChuvaFim: pickString(row, ["Data_Periodo_Pluviometro_Fim"]),
     }))
     .filter((row) => row.codigo)
-    .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+    .sort(compareStations);
 }
 
 export async function fetchHidroEstacoesByMunicipioForFeature(
@@ -277,6 +378,7 @@ export async function fetchHidroEstacoesByMunicipioForFeature(
   }, { signal });
 
   return rows
+    .filter((row) => feature !== "hidroSerieChuva" || isPluviometricStation(row))
     .map((row) => ({
       codigo: pickString(row, ["CodigoEstacao", "codigoestacao", "CodigoDaEstacao", "CodEstacao"]),
       nome: pickString(row, ["NomeEstacao", "Estacao_Nome", "Estacao", "Nome"]),
@@ -285,9 +387,11 @@ export async function fetchHidroEstacoesByMunicipioForFeature(
       ufSigla: pickString(row, ["SiglaUF", "UF_Estacao", "UF"]),
       tipoMedicao: pickString(row, ["TipoMedicaoChuvas", "TipoMedicao", "Tipo"]),
       nivelConsistencia: pickString(row, ["NivelConsistencia", "Consistencia"]),
+      periodoChuvaInicio: pickString(row, ["Data_Periodo_Pluviometro_Inicio"]),
+      periodoChuvaFim: pickString(row, ["Data_Periodo_Pluviometro_Fim"]),
     }))
     .filter((row) => row.codigo)
-    .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+    .sort(compareStations);
 }
 
 export async function fetchHidroSeriesData({
@@ -297,6 +401,7 @@ export async function fetchHidroSeriesData({
   endDate,
   onProgress,
   requestDelayMs = DEFAULT_SERIES_REQUEST_DELAY_MS,
+  signal,
 }: HidroSeriesRequest): Promise<Record<string, unknown>[]> {
   const endpoint = HIDRO_ENDPOINTS[feature];
   const maxRangeDays = endpoint.maxRangeDays ?? DEFAULT_SERIES_MAX_RANGE_DAYS;
@@ -350,7 +455,7 @@ export async function fetchHidroSeriesData({
       CodigoDaEstacao: stationCode,
       DataInicio: formatDate(window.start),
       DataFim: formatDate(window.end),
-    });
+    }, { signal });
 
     allRows.push(...rows);
     onProgress?.({
@@ -365,4 +470,45 @@ export async function fetchHidroSeriesData({
   }
 
   return allRows;
+}
+
+export async function fetchHidroLatestAvailableDate(
+  feature: HidroSeriesFeatureKey,
+  station: HidroEstacao,
+  signal?: AbortSignal,
+): Promise<string | null> {
+  const currentYear = new Date().getFullYear();
+  const oldestYear = parseInventoryYear(station.periodoChuvaInicio) ?? currentYear - 80;
+
+  for (let year = currentYear; year >= oldestYear; year -= 1) {
+    const endDate = year === currentYear
+      ? new Date()
+      : new Date(year, 11, 31);
+
+    const rows = await fetchHidroSeriesData({
+      feature,
+      stationCode: station.codigo,
+      startDate: `${year}-01-01`,
+      endDate: `${endDate.getFullYear()}-${String(endDate.getMonth() + 1).padStart(2, "0")}-${String(endDate.getDate()).padStart(2, "0")}`,
+      requestDelayMs: 0,
+      signal,
+    });
+
+    let latest: Date | null = null;
+    for (const row of rows) {
+      const candidate = getLatestDateFromRow(row);
+      if (candidate && (!latest || candidate > latest)) {
+        latest = candidate;
+      }
+    }
+
+    if (latest) {
+      const yyyy = latest.getFullYear();
+      const mm = String(latest.getMonth() + 1).padStart(2, "0");
+      const dd = String(latest.getDate()).padStart(2, "0");
+      return `${yyyy}-${mm}-${dd}`;
+    }
+  }
+
+  return null;
 }

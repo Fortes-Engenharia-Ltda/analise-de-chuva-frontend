@@ -24,6 +24,7 @@ const DATE_KEYS = [
   "DataLeitura",
   "DataLeituraUTC",
   "Data_Hora_Medicao",
+  "Data_Hora_Dado",
   "DataHora",
   "DataMedicao",
 ] as const;
@@ -70,31 +71,65 @@ function parseDate(raw: unknown): Date | null {
   return new Date(fallback.getFullYear(), fallback.getMonth(), fallback.getDate());
 }
 
+function getMonthRainDays(raw: Record<string, unknown>): (number | null)[] | null {
+  const days = Array.from({ length: 31 }, (_, index) => {
+    const day = String(index + 1).padStart(2, "0");
+    return parseRain(
+      pick(raw, [
+        `Chuva${day}`,
+        `chuva${day}`,
+        `Chuva_${day}`,
+        `chuva_${day}`,
+      ]),
+    );
+  });
+
+  return days.some((value) => value !== null) ? days : null;
+}
+
+function buildMonthRow(
+  station: HidroEstacao,
+  date: Date,
+  days: (number | null)[],
+): MonthRow {
+  const valid = days.filter((value): value is number => value !== null);
+
+  return {
+    estacao: station.codigo,
+    nivelConsistencia: station.nivelConsistencia || "2",
+    tipoMedicao: station.tipoMedicao || "1",
+    date: new Date(date.getFullYear(), date.getMonth(), 1),
+    year: date.getFullYear(),
+    month: date.getMonth() + 1,
+    days,
+    rainyDays: valid.filter((value) => value > 0).length,
+    totalRain: valid.reduce((sum, value) => sum + value, 0),
+  };
+}
+
 function toMonthRows(station: HidroEstacao, series: Record<string, unknown>[]): MonthRow[] {
   const monthMap = new Map<string, MonthRow>();
 
   for (const item of series) {
     const date = parseDate(pick(item, DATE_KEYS));
-    const rain = parseRain(pick(item, RAIN_KEYS));
-
-    if (!date || rain === null) continue;
+    if (!date) continue;
 
     const key = `${date.getFullYear()}-${date.getMonth() + 1}`;
+
+    const monthlyDays = getMonthRainDays(item);
+    if (monthlyDays) {
+      monthMap.set(key, buildMonthRow(station, date, monthlyDays));
+      continue;
+    }
+
+    const rain = parseRain(pick(item, RAIN_KEYS));
+    if (rain === null) continue;
+
     const dayIndex = date.getDate() - 1;
 
     let row = monthMap.get(key);
     if (!row) {
-      row = {
-        estacao: station.codigo,
-        nivelConsistencia: station.nivelConsistencia || "2",
-        tipoMedicao: station.tipoMedicao || "1",
-        date: new Date(date.getFullYear(), date.getMonth(), 1),
-        year: date.getFullYear(),
-        month: date.getMonth() + 1,
-        days: Array.from({ length: 31 }, () => null),
-        rainyDays: 0,
-        totalRain: 0,
-      };
+      row = buildMonthRow(station, date, Array.from({ length: 31 }, () => null));
       monthMap.set(key, row);
     }
 
