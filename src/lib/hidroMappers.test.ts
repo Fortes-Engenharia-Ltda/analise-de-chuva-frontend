@@ -64,6 +64,26 @@ describe("mapHidroSeriesToParsedFile", () => {
     expect(result.rows[0].days[15]).toBe(24.1);
   });
 
+  it("keeps one monthly row for each Data_Hora_Dado returned by the backend", () => {
+    const series = Array.from({ length: 12 }, (_, index) => {
+      const month = String(index + 1).padStart(2, "0");
+      return {
+        Data_Hora_Dado: `2010-${month}-01 00:00:00.0`,
+        Chuva_01: String(index + 1),
+      };
+    });
+
+    const result = mapHidroSeriesToParsedFile({
+      feature: "hidroSerieChuva",
+      station,
+      series,
+    });
+
+    expect(result.rows).toHaveLength(12);
+    expect(result.rows[0]).toMatchObject({ year: 2010, month: 1, totalRain: 1 });
+    expect(result.rows[11]).toMatchObject({ year: 2010, month: 12, totalRain: 12 });
+  });
+
   it("keeps mapping daily rows returned with a single rain value", () => {
     const result = mapHidroSeriesToParsedFile({
       feature: "hidroSerieChuva",

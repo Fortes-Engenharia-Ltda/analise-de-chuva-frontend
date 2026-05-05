@@ -33,24 +33,28 @@ interface Props {
   location: string;
   estacaoCodigo: string;
   yearsRange: string;
+  analysisYears: number;
 }
 
 export interface DashboardHandle {
   exportPdf: () => Promise<void>;
 }
 
-// Arredonda para o inteiro mais próximo (ex.: 5,4 -> 5; 5,5 -> 6)
 const fmt = (n: number, d = 1) => n.toLocaleString("pt-BR", { minimumFractionDigits: d, maximumFractionDigits: d });
-const fmtCeil = (n: number) => Math.round(n).toLocaleString("pt-BR");
+const fmtCeil = (n: number) => (n > 0 ? Math.ceil(n) : 0).toLocaleString("pt-BR");
 const pct = (n: number) => `${n.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
 
 export const Dashboard = forwardRef<DashboardHandle, Props>(
-  ({ rows, location, estacaoCodigo, yearsRange }, ref) => {
+  ({ rows, location, estacaoCodigo, yearsRange, analysisYears }, ref) => {
   const [weights, setWeights] = useState<Weights>(DEFAULT_WEIGHTS);
+  const [earthworksSevereShare, setEarthworksSevereShare] = useState(1);
   const chartsRef = useRef<HTMLDivElement>(null);
 
   const monthly = useMemo(() => impactByMonthAvg(rows), [rows]);
-  const agg = useMemo(() => aggregate(monthly, weights), [monthly, weights]);
+  const agg = useMemo(
+    () => aggregate(monthly, weights, { earthworksSevereShare }),
+    [monthly, weights, earthworksSevereShare],
+  );
 
   useImperativeHandle(ref, () => ({
     exportPdf: async () => {
@@ -62,10 +66,11 @@ export const Dashboard = forwardRef<DashboardHandle, Props>(
         monthly,
         agg,
         weights,
+        earthworksSevereShare,
         chartContainer: chartsRef.current,
       });
     },
-  }), [location, estacaoCodigo, rows.length, yearsRange, monthly, agg, weights]);
+  }), [location, estacaoCodigo, rows.length, yearsRange, monthly, agg, weights, earthworksSevereShare]);
 
   const impactedKeys: ImpactKey[] = ["low", "moderate", "high", "severe"];
   const pieData = impactedKeys.map((k) => ({
@@ -86,7 +91,7 @@ export const Dashboard = forwardRef<DashboardHandle, Props>(
       {/* Média de dias chuvosos por mês */}
       <div className="bg-card border rounded-2xl p-5 shadow-card print-section">
         <h3 className="font-semibold">Média de dias chuvosos por mês</h3>
-        <p className="text-xs text-muted-foreground mb-3">Média dos últimos 15 anos</p>
+        <p className="text-xs text-muted-foreground mb-3">Média dos últimos {analysisYears} anos</p>
         <div className="grid grid-cols-6 lg:grid-cols-12 gap-2">
           {monthly.map((m) => (
             <div key={m.month} className="rounded-xl border bg-primary-soft/40 p-2.5 text-center">
@@ -154,7 +159,9 @@ export const Dashboard = forwardRef<DashboardHandle, Props>(
             </tfoot>
           </table>
         </div>
-        <p className="text-[11px] text-muted-foreground px-5 py-2 italic">*Média dos últimos 15 anos</p>
+        <p className="text-[11px] text-muted-foreground px-5 py-2 italic">
+          *Média dos últimos {analysisYears} anos. Valores maiores que zero são arredondados para cima.
+        </p>
       </div>
 
       {/* Totais por categoria + Ponderado por categoria */}
@@ -314,7 +321,7 @@ export const Dashboard = forwardRef<DashboardHandle, Props>(
                   value={[weights[k] * 100]}
                   onValueChange={([v]) => setWeights({ ...weights, [k]: v / 100 })}
                   min={0}
-                  max={200}
+                  max={500}
                   step={5}
                 />
               </div>
@@ -325,13 +332,32 @@ export const Dashboard = forwardRef<DashboardHandle, Props>(
 
       {/* Indicadores de improdutividade */}
       <div className="bg-card border rounded-2xl p-5 shadow-card print-section">
-        <div className="flex items-center gap-2 mb-1">
-          <Activity className="w-4 h-4 text-secondary" />
-          <h3 className="font-semibold">Improdutividade considerada (anual)</h3>
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between mb-4">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <Activity className="w-4 h-4 text-secondary" />
+              <h3 className="font-semibold">Improdutividade considerada (anual)</h3>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Calculada sobre os dias ponderados, dividida por 365 dias
+            </p>
+          </div>
+          <div className="w-full lg:w-80 rounded-xl border bg-muted/30 p-3">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs font-medium">Severo em terraplenagem</p>
+              <span className="text-xs font-semibold tabular-nums">
+                {Math.round(earthworksSevereShare * 100)}%
+              </span>
+            </div>
+            <Slider
+              value={[earthworksSevereShare * 100]}
+              onValueChange={([value]) => setEarthworksSevereShare(value / 100)}
+              min={0}
+              max={500}
+              step={5}
+            />
+          </div>
         </div>
-        <p className="text-xs text-muted-foreground mb-4">
-          Calculada sobre os dias ponderados, dividida por 365 dias
-        </p>
         <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
           {[
             {
@@ -352,7 +378,7 @@ export const Dashboard = forwardRef<DashboardHandle, Props>(
             {
               label: "Alto volume de terraplenagem",
               value: agg.unprodEarthworks,
-              hint: "(Bx + Mod + Alto + Sev) / 365",
+              hint: `(Bx + Mod + Alto + Sev x ${Math.round(earthworksSevereShare * 100)}%) / 365`,
             },
           ].map((item) => (
             <div key={item.label} className="rounded-xl border bg-muted/30 p-4">

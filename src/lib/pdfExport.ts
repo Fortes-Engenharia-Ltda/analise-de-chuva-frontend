@@ -42,7 +42,7 @@ const MONTHS_FULL = [
 
 const IMPACTED_KEYS: ImpactKey[] = ["low", "moderate", "high", "severe"];
 
-const round = (n: number) => Math.round(n).toLocaleString("pt-BR");
+const round = (n: number) => (n > 0 ? Math.ceil(n) : 0).toLocaleString("pt-BR");
 const fmt1 = (n: number) =>
   n.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 const pct = (n: number) =>
@@ -60,6 +60,7 @@ interface ExportArgs {
   monthly: ImpactPerMonth[];
   agg: AggregatedImpact;
   weights: Weights;
+  earthworksSevereShare: number;
   chartContainer?: HTMLElement | null;
 }
 
@@ -207,7 +208,7 @@ const renderCover = (doc: jsPDF, args: ExportArgs) => {
     PAGE.margin + 4, y + 14
   );
   doc.text(
-    "Os totais e improdutividades utilizam médias precisas (sem arredondamento intermediário).",
+    "Valores mensais maiores que zero são arredondados para cima; totais usam médias precisas.",
     PAGE.margin + 4, y + 20
   );
   y += 32;
@@ -332,7 +333,7 @@ const renderMonthlyImpact = (doc: jsPDF, args: ExportArgs) => {
   doc.setFontSize(8);
   doc.setTextColor(...C.muted);
   doc.text(
-    "*Médias dos últimos anos. Valores mensais arredondados; totais usam médias precisas.",
+    "*Médias dos últimos anos. Valores mensais maiores que zero são arredondados para cima; totais usam médias precisas.",
     PAGE.margin, y + 3
   );
   y += 10;
@@ -375,7 +376,11 @@ const drawUnproductivityCards = (doc: jsPDF, args: ExportArgs, y: number) => {
     { label: "Obras cobertas", value: args.agg.unprodCovered, hint: "Severo / 365" },
     { label: "Fora de áreas industriais", value: args.agg.unprodOutsideIndustrial, hint: "(Mod + Alto + Sev) / 365" },
     { label: "Comuns em áreas industriais", value: args.agg.unprodCommonIndustrial, hint: "(Bx + Mod + Alto + Sev) / 365" },
-    { label: "Alto volume de terraplenagem", value: args.agg.unprodEarthworks, hint: "(Bx + Mod + Alto + Sev) / 365" },
+    {
+      label: "Alto volume de terraplenagem",
+      value: args.agg.unprodEarthworks,
+      hint: `(Bx + Mod + Alto + Sev x ${Math.round(args.earthworksSevereShare * 100)}%) / 365`,
+    },
   ];
 
   // 2 cards por linha (largura/2 - gap)

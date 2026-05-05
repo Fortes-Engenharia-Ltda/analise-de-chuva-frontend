@@ -227,7 +227,15 @@ export interface AggregatedImpact {
   unprodEarthworks: number;
 }
 
-export function aggregate(monthly: ImpactPerMonth[], weights: Weights): AggregatedImpact {
+interface AggregateOptions {
+  earthworksSevereShare?: number;
+}
+
+export function aggregate(
+  monthly: ImpactPerMonth[],
+  weights: Weights,
+  options: AggregateOptions = {},
+): AggregatedImpact {
   const totals: Record<ImpactKey, number> = { none: 0, low: 0, moderate: 0, high: 0, severe: 0 };
   for (const m of monthly) {
     totals.none += m.none;
@@ -254,6 +262,7 @@ export function aggregate(monthly: ImpactPerMonth[], weights: Weights): Aggregat
     high: totals.high * weights.high,
     severe: totals.severe * weights.severe,
   };
+  const earthworksSevereShare = options.earthworksSevereShare ?? 1;
   const weightedSum = weighted.low + weighted.moderate + weighted.high + weighted.severe;
 
   return {
@@ -267,7 +276,12 @@ export function aggregate(monthly: ImpactPerMonth[], weights: Weights): Aggregat
     unprodCovered: weighted.severe / 365,
     unprodOutsideIndustrial: (weighted.moderate + weighted.high + weighted.severe) / 365,
     unprodCommonIndustrial: (weighted.low + weighted.moderate + weighted.high + weighted.severe) / 365,
-    unprodEarthworks: (weighted.low + weighted.moderate + weighted.high + weighted.severe) / 365,
+    unprodEarthworks: (
+      weighted.low +
+      weighted.moderate +
+      weighted.high +
+      weighted.severe * earthworksSevereShare
+    ) / 365,
   };
 }
 

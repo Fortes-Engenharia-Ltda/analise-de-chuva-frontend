@@ -31,11 +31,11 @@ function parseHidroDate(value?: string): Date | null {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-function buildCandidateRange(station: HidroEstacao, years: number) {
+export function buildCandidateRange(station: HidroEstacao, years: number) {
   const today = new Date();
   const periodEnd = parseHidroDate(station.periodoChuvaFim);
   const endDate = periodEnd && periodEnd < today ? periodEnd : today;
-  const startDate = new Date(endDate.getFullYear() - years + 1, 0, 1);
+  const startDate = new Date(endDate.getFullYear() - years, endDate.getMonth(), 1);
 
   return {
     startDate: formatDate(startDate),

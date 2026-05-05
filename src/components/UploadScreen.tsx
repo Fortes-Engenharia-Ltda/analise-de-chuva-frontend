@@ -42,10 +42,11 @@ import {
 } from "@/services/hidroEndpointRegistry";
 
 interface Props {
-  onLoaded: (location: string, data: ParsedFile) => void;
+  onLoaded: (location: string, data: ParsedFile, analysisYears: number) => void;
 }
 
 const MUNICIPIOS_PAGE_SIZE = 75;
+const DEFAULT_ANALYSIS_YEARS = 15;
 
 function normalizeSearchText(value: string) {
   return value
@@ -93,6 +94,7 @@ export const UploadScreen = ({ onLoaded }: Props) => {
   const [location, setLocation] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [loadingCsv, setLoadingCsv] = useState(false);
+  const [analysisYears, setAnalysisYears] = useState(DEFAULT_ANALYSIS_YEARS);
 
   const feature: HidroSeriesFeatureKey = DEFAULT_HIDRO_FEATURE;
   const [ufSigla, setUfSigla] = useState("");
@@ -221,6 +223,7 @@ export const UploadScreen = ({ onLoaded }: Props) => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const normalizedYears = Math.max(1, Math.min(80, Math.round(analysisYears)));
 
     if (mode === "csv") {
       if (!location.trim()) return toast.error("Informe o local");
@@ -232,7 +235,7 @@ export const UploadScreen = ({ onLoaded }: Props) => {
           toast.error("Nenhum dado válido encontrado no CSV");
           return;
         }
-        onLoaded(location.trim(), data);
+        onLoaded(location.trim(), data, normalizedYears);
         toast.success(`${data.rows.length} meses carregados`);
       } catch (err) {
         console.error(err);
@@ -252,6 +255,7 @@ export const UploadScreen = ({ onLoaded }: Props) => {
       const data = await seriesMutation.mutateAsync({
         feature,
         station: activeStation,
+        years: normalizedYears,
         onProgress: setSeriesProgress,
       });
       if (data.rows.length === 0) {
@@ -264,7 +268,7 @@ export const UploadScreen = ({ onLoaded }: Props) => {
       const loadedLocation = loadedLocationBase
         ? `${loadedLocationBase} · Estação ${activeStation.codigo}`
         : `Estação ${activeStation.codigo}`;
-      onLoaded(loadedLocation, data);
+      onLoaded(loadedLocation, data, normalizedYears);
       toast.success(`${data.rows.length} meses carregados via API`);
     } catch (err) {
       console.error(err);
@@ -577,6 +581,24 @@ export const UploadScreen = ({ onLoaded }: Props) => {
             </TabsContent>
           </Tabs>
 
+          <div className="space-y-2">
+            <Label htmlFor="analysis-years">Prazo de análise</Label>
+            <div className="flex items-center gap-2">
+              <Input
+                id="analysis-years"
+                type="number"
+                min={1}
+                max={80}
+                value={analysisYears}
+                onChange={(event) => {
+                  const next = Number(event.target.value);
+                  setAnalysisYears(Number.isFinite(next) ? next : DEFAULT_ANALYSIS_YEARS);
+                }}
+              />
+              <span className="text-sm text-muted-foreground whitespace-nowrap">anos</span>
+            </div>
+          </div>
+
           <Button type="submit" className="w-full" disabled={isSubmitting}>
             {isSubmitting ? (
               <>
@@ -604,7 +626,7 @@ export const UploadScreen = ({ onLoaded }: Props) => {
         </form>
 
         <p className="text-xs text-center text-muted-foreground mt-6">
-          Histórico considerado: últimos 15 anos disponíveis.
+          Histórico considerado: prazo selecionado conforme dados disponíveis.
         </p>
       </div>
     </div>
