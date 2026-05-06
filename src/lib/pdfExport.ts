@@ -57,6 +57,7 @@ interface ExportArgs {
   estacaoCodigo: string;
   monthsCount: number;
   yearsRange: string;
+  historyPeriodLabel: string;
   monthly: ImpactPerMonth[];
   agg: AggregatedImpact;
   weights: Weights;
@@ -204,7 +205,7 @@ const renderCover = (doc: jsPDF, args: ExportArgs) => {
   doc.setFontSize(9);
   doc.setTextColor(...C.muted);
   doc.text(
-    `Histórico considerado: ${args.yearsRange} (${args.monthsCount} meses).`,
+    `Histórico considerado: ${args.historyPeriodLabel} (${args.monthsCount} meses).`,
     PAGE.margin + 4, y + 14
   );
   doc.text(
@@ -333,7 +334,7 @@ const renderMonthlyImpact = (doc: jsPDF, args: ExportArgs) => {
   doc.setFontSize(8);
   doc.setTextColor(...C.muted);
   doc.text(
-    "*Médias dos últimos anos. Valores mensais maiores que zero são arredondados para cima; totais usam médias precisas.",
+    `*Médias do histórico selecionado (${args.historyPeriodLabel}). Valores mensais maiores que zero são arredondados para cima; totais usam médias precisas.`,
     PAGE.margin, y + 3
   );
   y += 10;

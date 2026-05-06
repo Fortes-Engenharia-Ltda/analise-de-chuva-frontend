@@ -7,13 +7,18 @@ import { MetadataBar } from "@/components/MetadataBar";
 import { Dashboard, type DashboardHandle } from "@/components/Dashboard";
 import { DataTables } from "@/components/DataTables";
 import { ImpactLegend } from "@/components/ImpactLegend";
-import { filterByYears, type ParsedFile } from "@/lib/rainfall";
+import {
+  filterByHistory,
+  formatHistoryPeriodLabel,
+  type HistoryPeriod,
+  type ParsedFile,
+} from "@/lib/rainfall";
 import { toast } from "sonner";
 
 const Index = () => {
   const [location, setLocation] = useState<string | null>(null);
   const [data, setData] = useState<ParsedFile | null>(null);
-  const [analysisYears, setAnalysisYears] = useState(15);
+  const [historyPeriod, setHistoryPeriod] = useState<HistoryPeriod>({ unit: "years", value: 15 });
   const [exporting, setExporting] = useState(false);
   const dashboardRef = useRef<DashboardHandle>(null);
 
@@ -32,17 +37,17 @@ const Index = () => {
   };
 
   const filteredRows = useMemo(
-    () => (data ? filterByYears(data.rows, analysisYears) : []),
-    [data, analysisYears]
+    () => (data ? filterByHistory(data.rows, historyPeriod) : []),
+    [data, historyPeriod]
   );
 
   if (!data || !location) {
     return (
       <UploadScreen
-        onLoaded={(loc, d, years) => {
+        onLoaded={(loc, d, period) => {
           setLocation(loc);
           setData(d);
-          setAnalysisYears(years);
+          setHistoryPeriod(period);
         }}
       />
     );
@@ -114,7 +119,7 @@ const Index = () => {
               location={location}
               estacaoCodigo={data.header.estacaoCodigo}
               yearsRange={yearsRange}
-              analysisYears={analysisYears}
+              historyPeriodLabel={formatHistoryPeriodLabel(historyPeriod)}
             />
           </TabsContent>
           <TabsContent value="data" className="mt-4">
@@ -124,7 +129,7 @@ const Index = () => {
       </main>
 
       <footer className="container max-w-7xl py-6 text-center text-xs text-muted-foreground">
-        Histórico considerado: {analysisYears} anos · Dados ANA · Hidroweb
+        Histórico considerado: {formatHistoryPeriodLabel(historyPeriod)} · Dados ANA · Hidroweb
       </footer>
     </div>
   );

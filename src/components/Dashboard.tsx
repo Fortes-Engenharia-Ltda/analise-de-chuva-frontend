@@ -33,7 +33,7 @@ interface Props {
   location: string;
   estacaoCodigo: string;
   yearsRange: string;
-  analysisYears: number;
+  historyPeriodLabel: string;
 }
 
 export interface DashboardHandle {
@@ -45,7 +45,7 @@ const fmtCeil = (n: number) => (n > 0 ? Math.ceil(n) : 0).toLocaleString("pt-BR"
 const pct = (n: number) => `${n.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
 
 export const Dashboard = forwardRef<DashboardHandle, Props>(
-  ({ rows, location, estacaoCodigo, yearsRange, analysisYears }, ref) => {
+  ({ rows, location, estacaoCodigo, yearsRange, historyPeriodLabel }, ref) => {
   const [weights, setWeights] = useState<Weights>(DEFAULT_WEIGHTS);
   const [earthworksSevereShare, setEarthworksSevereShare] = useState(1);
   const chartsRef = useRef<HTMLDivElement>(null);
@@ -63,6 +63,7 @@ export const Dashboard = forwardRef<DashboardHandle, Props>(
         estacaoCodigo,
         monthsCount: rows.length,
         yearsRange,
+        historyPeriodLabel,
         monthly,
         agg,
         weights,
@@ -70,7 +71,7 @@ export const Dashboard = forwardRef<DashboardHandle, Props>(
         chartContainer: chartsRef.current,
       });
     },
-  }), [location, estacaoCodigo, rows.length, yearsRange, monthly, agg, weights, earthworksSevereShare]);
+  }), [location, estacaoCodigo, rows.length, yearsRange, historyPeriodLabel, monthly, agg, weights, earthworksSevereShare]);
 
   const impactedKeys: ImpactKey[] = ["low", "moderate", "high", "severe"];
   const pieData = impactedKeys.map((k) => ({
@@ -91,7 +92,7 @@ export const Dashboard = forwardRef<DashboardHandle, Props>(
       {/* Média de dias chuvosos por mês */}
       <div className="bg-card border rounded-2xl p-5 shadow-card print-section">
         <h3 className="font-semibold">Média de dias chuvosos por mês</h3>
-        <p className="text-xs text-muted-foreground mb-3">Média dos últimos {analysisYears} anos</p>
+        <p className="text-xs text-muted-foreground mb-3">Média dos últimos {historyPeriodLabel}</p>
         <div className="grid grid-cols-6 lg:grid-cols-12 gap-2">
           {monthly.map((m) => (
             <div key={m.month} className="rounded-xl border bg-primary-soft/40 p-2.5 text-center">
@@ -160,7 +161,7 @@ export const Dashboard = forwardRef<DashboardHandle, Props>(
           </table>
         </div>
         <p className="text-[11px] text-muted-foreground px-5 py-2 italic">
-          *Média dos últimos {analysisYears} anos. Valores maiores que zero são arredondados para cima.
+          *Média dos últimos {historyPeriodLabel}. Valores maiores que zero são arredondados para cima.
         </p>
       </div>
 

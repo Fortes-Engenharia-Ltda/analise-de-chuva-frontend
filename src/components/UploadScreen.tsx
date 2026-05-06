@@ -28,7 +28,13 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Progress } from "@/components/ui/progress";
 import { toast } from "sonner";
 import { HidroApiError } from "@/services/hidroProxyApi";
-import { parseCsvFile, type ParsedFile } from "@/lib/rainfall";
+import {
+  formatHistoryPeriodLabel,
+  parseCsvFile,
+  type HistoryPeriod,
+  type HistoryPeriodUnit,
+  type ParsedFile,
+} from "@/lib/rainfall";
 import { useHidroCatalog } from "@/hooks/useHidroCatalog";
 import { useHidroSeries } from "@/hooks/useHidroSeries";
 import {
@@ -42,11 +48,28 @@ import {
 } from "@/services/hidroEndpointRegistry";
 
 interface Props {
-  onLoaded: (location: string, data: ParsedFile, analysisYears: number) => void;
+  onLoaded: (location: string, data: ParsedFile, historyPeriod: HistoryPeriod) => void;
 }
 
 const MUNICIPIOS_PAGE_SIZE = 75;
-const DEFAULT_ANALYSIS_YEARS = 15;
+const DEFAULT_HISTORY_PERIOD: HistoryPeriod = { unit: "years", value: 15 };
+
+function normalizeHistoryValue(unit: HistoryPeriodUnit, value: number) {
+  const rounded = Math.max(1, Math.round(value));
+  return unit === "months" ? rounded : rounded;
+}
+
+function convertHistoryPeriod(period: HistoryPeriod, nextUnit: HistoryPeriodUnit): HistoryPeriod {
+  if (period.unit === nextUnit) return period;
+
+  const months = period.unit === "years" ? period.value * 12 : period.value;
+  const nextValue = nextUnit === "months" ? months : months / 12;
+
+  return {
+    unit: nextUnit,
+    value: Math.max(1, Math.round(nextValue)),
+  };
+}
 
 function normalizeSearchText(value: string) {
   return value
@@ -94,7 +117,7 @@ export const UploadScreen = ({ onLoaded }: Props) => {
   const [location, setLocation] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [loadingCsv, setLoadingCsv] = useState(false);
-  const [analysisYears, setAnalysisYears] = useState(DEFAULT_ANALYSIS_YEARS);
+  const [historyPeriod, setHistoryPeriod] = useState<HistoryPeriod>(DEFAULT_HISTORY_PERIOD);
 
   const feature: HidroSeriesFeatureKey = DEFAULT_HIDRO_FEATURE;
   const [ufSigla, setUfSigla] = useState("");
@@ -223,7 +246,10 @@ export const UploadScreen = ({ onLoaded }: Props) => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const normalizedYears = Math.max(1, Math.min(80, Math.round(analysisYears)));
+    const normalizedHistoryPeriod: HistoryPeriod = {
+      unit: historyPeriod.unit,
+      value: normalizeHistoryValue(historyPeriod.unit, historyPeriod.value),
+    };
 
     if (mode === "csv") {
       if (!location.trim()) return toast.error("Informe o local");
@@ -235,7 +261,7 @@ export const UploadScreen = ({ onLoaded }: Props) => {
           toast.error("Nenhum dado válido encontrado no CSV");
           return;
         }
-        onLoaded(location.trim(), data, normalizedYears);
+        onLoaded(location.trim(), data, normalizedHistoryPeriod);
         toast.success(`${data.rows.length} meses carregados`);
       } catch (err) {
         console.error(err);
@@ -255,7 +281,7 @@ export const UploadScreen = ({ onLoaded }: Props) => {
       const data = await seriesMutation.mutateAsync({
         feature,
         station: activeStation,
-        years: normalizedYears,
+        historyPeriod: normalizedHistoryPeriod,
         onProgress: setSeriesProgress,
       });
       if (data.rows.length === 0) {
@@ -268,7 +294,7 @@ export const UploadScreen = ({ onLoaded }: Props) => {
       const loadedLocation = loadedLocationBase
         ? `${loadedLocationBase} · Estação ${activeStation.codigo}`
         : `Estação ${activeStation.codigo}`;
-      onLoaded(loadedLocation, data, normalizedYears);
+      onLoaded(loadedLocation, data, normalizedHistoryPeriod);
       toast.success(`${data.rows.length} meses carregados via API`);
     } catch (err) {
       console.error(err);
@@ -583,20 +609,39 @@ export const UploadScreen = ({ onLoaded }: Props) => {
 
           <div className="space-y-2">
             <Label htmlFor="analysis-years">Prazo de análise</Label>
-            <div className="flex items-center gap-2">
+            <div className="grid grid-cols-[1fr_1.2fr] gap-2">
+              <Select
+                value={historyPeriod.unit}
+                onValueChange={(value) => {
+                  const nextUnit = value as HistoryPeriodUnit;
+                  setHistoryPeriod((current) => convertHistoryPeriod(current, nextUnit));
+                }}
+              >
+                <SelectTrigger id="analysis-years">
+                  <SelectValue placeholder="Unidade" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="years">Anos</SelectItem>
+                  <SelectItem value="months">Meses</SelectItem>
+                </SelectContent>
+              </Select>
               <Input
-                id="analysis-years"
                 type="number"
                 min={1}
-                max={80}
-                value={analysisYears}
+                step={1}
+                value={historyPeriod.value}
                 onChange={(event) => {
                   const next = Number(event.target.value);
-                  setAnalysisYears(Number.isFinite(next) ? next : DEFAULT_ANALYSIS_YEARS);
+                  setHistoryPeriod((current) => ({
+                    ...current,
+                    value: Number.isFinite(next) ? Math.max(1, Math.round(next)) : current.value,
+                  }));
                 }}
               />
-              <span className="text-sm text-muted-foreground whitespace-nowrap">anos</span>
             </div>
+            <p className="text-xs text-muted-foreground">
+              Ex.: 15 anos ou 18 meses. Seleção atual: {formatHistoryPeriodLabel(historyPeriod)}.
+            </p>
           </div>
 
           <Button type="submit" className="w-full" disabled={isSubmitting}>
@@ -626,7 +671,7 @@ export const UploadScreen = ({ onLoaded }: Props) => {
         </form>
 
         <p className="text-xs text-center text-muted-foreground mt-6">
-          Histórico considerado: prazo selecionado conforme dados disponíveis.
+          Histórico considerado: {formatHistoryPeriodLabel(historyPeriod)}.
         </p>
       </div>
     </div>

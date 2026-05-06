@@ -87,6 +87,20 @@ function getMonthRainDays(raw: Record<string, unknown>): (number | null)[] | nul
   return days.some((value) => value !== null) ? days : null;
 }
 
+function hasMonthlySummaryFields(raw: Record<string, unknown>): boolean {
+  return [
+    "Maxima",
+    "Total",
+    "DiaMaxima",
+    "NumDiasDeChuva",
+    "MaximaStatus",
+    "TotalStatus",
+    "NumDiasDeChuvaStatus",
+    "TotalAnual",
+    "TotalAnualStatus",
+  ].some((key) => raw[key] !== null && raw[key] !== undefined && String(raw[key]).trim() !== "");
+}
+
 function buildMonthRow(
   station: HidroEstacao,
   date: Date,
@@ -107,7 +121,11 @@ function buildMonthRow(
   };
 }
 
-function toMonthRows(station: HidroEstacao, series: Record<string, unknown>[]): MonthRow[] {
+function toMonthRows(
+  feature: HidroSeriesFeatureKey,
+  station: HidroEstacao,
+  series: Record<string, unknown>[],
+): MonthRow[] {
   const monthMap = new Map<string, MonthRow>();
 
   for (const item of series) {
@@ -123,7 +141,13 @@ function toMonthRows(station: HidroEstacao, series: Record<string, unknown>[]): 
     }
 
     const rain = parseRain(pick(item, RAIN_KEYS));
-    if (rain === null) continue;
+    if (rain === null) {
+      if (feature === "hidroSerieChuva" && hasMonthlySummaryFields(item)) {
+        monthMap.set(key, buildMonthRow(station, date, Array.from({ length: 31 }, () => null)));
+        continue;
+      }
+      continue;
+    }
 
     const dayIndex = date.getDate() - 1;
 
@@ -151,10 +175,11 @@ function toMonthRows(station: HidroEstacao, series: Record<string, unknown>[]): 
 }
 
 export function mapHidroSeriesToParsedFile({
+  feature,
   station,
   series,
 }: BuildParsedFileOptions): ParsedFile {
-  const rows = toMonthRows(station, series);
+  const rows = toMonthRows(feature, station, series);
 
   return {
     header: {

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildCandidateRange } from "@/hooks/useHidroSeries";
+import type { HistoryPeriod } from "@/lib/rainfall";
 import type { HidroEstacao } from "@/services/hidroProxyApi";
 
 const station: HidroEstacao = {
@@ -21,13 +22,15 @@ describe("buildCandidateRange", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(2026, 4, 4));
 
-    expect(buildCandidateRange(station, 15)).toEqual({
+    const historyPeriod: HistoryPeriod = { unit: "years", value: 15 };
+
+    expect(buildCandidateRange(station, historyPeriod)).toEqual({
       startDate: "2011-05-01",
       endDate: "2026-05-04",
     });
   });
 
-  it("uses the station period end when it is earlier than today", () => {
+  it("ignores the station period end and always uses the current date", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(2026, 4, 4));
 
@@ -37,11 +40,21 @@ describe("buildCandidateRange", () => {
           ...station,
           periodoChuvaFim: "2025-12-01 00:00:00.0",
         },
-        15,
+        { unit: "years", value: 15 },
       ),
     ).toEqual({
-      startDate: "2010-12-01",
-      endDate: "2025-12-01",
+      startDate: "2011-05-01",
+      endDate: "2026-05-04",
+    });
+  });
+
+  it("supports exact month windows for the API", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 4, 4));
+
+    expect(buildCandidateRange(station, { unit: "months", value: 18 })).toEqual({
+      startDate: "2024-12-01",
+      endDate: "2026-05-04",
     });
   });
 });

@@ -104,4 +104,27 @@ describe("mapHidroSeriesToParsedFile", () => {
     });
     expect(result.rows[0].days.slice(0, 3)).toEqual([1.5, 0, 4]);
   });
+
+  it("keeps monthly series rows even when the API omits daily fields", () => {
+    const result = mapHidroSeriesToParsedFile({
+      feature: "hidroSerieChuva",
+      station,
+      series: [
+        {
+          Data_Hora_Dado: "2011-05-01 00:00:00.0",
+          Total: "0,0",
+          NumDiasDeChuva: "0",
+        },
+      ],
+    });
+
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0]).toMatchObject({
+      year: 2011,
+      month: 5,
+      rainyDays: 0,
+      totalRain: 0,
+    });
+    expect(result.rows[0].days.every((day) => day === null)).toBe(true);
+  });
 });

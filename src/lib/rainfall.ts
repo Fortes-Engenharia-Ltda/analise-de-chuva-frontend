@@ -23,6 +23,13 @@ export interface ParsedFile {
   rows: MonthRow[];
 }
 
+export type HistoryPeriodUnit = "years" | "months";
+
+export interface HistoryPeriod {
+  unit: HistoryPeriodUnit;
+  value: number;
+}
+
 const parseNum = (v: unknown): number | null => {
   if (v === null || v === undefined) return null;
   const s = String(v).trim().replace(/"/g, "").replace(",", ".");
@@ -114,12 +121,35 @@ export async function parseCsvFile(file: File): Promise<ParsedFile> {
   };
 }
 
-// Limita histórico aos últimos N anos (15 por padrão)
-export function filterByYears(rows: MonthRow[], years = 15): MonthRow[] {
+// Limita histórico aos últimos N anos usando a data atual como referência.
+export function getHistoryStartDate(referenceDate: Date, period: HistoryPeriod): Date {
+  const value = Math.max(1, Math.round(period.value));
+  if (period.unit === "years") {
+    return new Date(referenceDate.getFullYear() - value, referenceDate.getMonth(), 1);
+  }
+
+  return new Date(referenceDate.getFullYear(), referenceDate.getMonth() - (value - 1), 1);
+}
+
+export function formatHistoryPeriodLabel(period: HistoryPeriod): string {
+  const value = Math.max(1, Math.round(period.value));
+  if (period.unit === "months") {
+    return `${value} ${value === 1 ? "mês" : "meses"}`;
+  }
+
+  return `${value} ${value === 1 ? "ano" : "anos"}`;
+}
+
+export function filterByHistory(rows: MonthRow[], period: HistoryPeriod, referenceDate = new Date()): MonthRow[] {
   if (rows.length === 0) return rows;
-  const maxDate = rows[rows.length - 1].date;
-  const cutoff = new Date(maxDate.getFullYear() - years, maxDate.getMonth(), 1);
-  return rows.filter((r) => r.date >= cutoff);
+  const cutoff = getHistoryStartDate(referenceDate, period);
+  const currentMonthStart = new Date(referenceDate.getFullYear(), referenceDate.getMonth(), 1);
+  return rows.filter((r) => r.date >= cutoff && r.date <= currentMonthStart);
+}
+
+// Compatibilidade com código e testes existentes.
+export function filterByYears(rows: MonthRow[], years = 15, referenceDate = new Date()): MonthRow[] {
+  return filterByHistory(rows, { unit: "years", value: years }, referenceDate);
 }
 
 export const IMPACT_LABELS: Record<ImpactKey, string> = {
