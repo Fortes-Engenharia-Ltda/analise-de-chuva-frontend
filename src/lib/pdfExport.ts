@@ -2,8 +2,11 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import html2canvas from "html2canvas";
 import {
+  CALCULATION_NOTES,
+  ceilDays,
   IMPACT_LABELS,
   IMPACT_RANGES,
+  roundedRainyDays,
   type AggregatedImpact,
   type ImpactKey,
   type ImpactPerMonth,
@@ -60,7 +63,9 @@ interface ExportArgs {
   historyPeriodLabel: string;
   monthly: ImpactPerMonth[];
   agg: AggregatedImpact;
+  fixedAgg: AggregatedImpact;
   weights: Weights;
+  weightsWereChanged: boolean;
   earthworksSevereShare: number;
   chartContainer?: HTMLElement | null;
 }
@@ -138,14 +143,14 @@ const buildChartSummary = (
   args: ExportArgs
 ): ChartSummary => {
   if (type === "monthly") {
-    const rainyPerMonth = args.monthly.map((m) => m.rainy);
+    const rainyPerMonth = args.monthly.map(roundedRainyDays);
 
     return {
       head: ["Mês", "Dias chuvosos médios", "Alta severidade (alto + severo)"],
       body: args.monthly.map((m) => [
         MONTHS_FULL[m.month - 1],
-        `${fmt1(m.rainy)} dias`,
-        `${fmt1(m.high + m.severe)} dias`,
+        `${roundedRainyDays(m)} dias`,
+        `${ceilDays(m.high) + ceilDays(m.severe)} dias`,
       ]),
       rowIntensity: rainyPerMonth,
     };
@@ -157,7 +162,7 @@ const buildChartSummary = (
       body: IMPACTED_KEYS.map((k) => [
         IMPACT_LABELS[k],
         IMPACT_RANGES[k],
-        fmt1(args.agg.totals[k]),
+        round(args.agg.totals[k]),
         pct(args.agg.percentages[k]),
       ]),
       impactOrder: IMPACTED_KEYS,
@@ -168,7 +173,7 @@ const buildChartSummary = (
     head: ["Categoria", "Dias (média)", "Ponderado", "Peso"],
     body: IMPACTED_KEYS.map((k) => [
       IMPACT_LABELS[k],
-      fmt1(args.agg.totals[k]),
+      round(args.agg.totals[k]),
       fmt1(args.agg.weighted[k]),
       `${Math.round(args.weights[k] * 100)}%`,
     ]),
@@ -209,7 +214,7 @@ const renderCover = (doc: jsPDF, args: ExportArgs) => {
     PAGE.margin + 4, y + 14
   );
   doc.text(
-    "Valores mensais maiores que zero são arredondados para cima; totais usam médias precisas.",
+    "Médias mensais > 0 arredondadas para cima; totais somam os valores mensais arredondados.",
     PAGE.margin + 4, y + 20
   );
   y += 32;
@@ -259,7 +264,7 @@ const renderCover = (doc: jsPDF, args: ExportArgs) => {
   // === Média mensal de dias chuvosos ===
   y = sectionTitle(doc, y, "Média de dias chuvosos por mês");
 
-  const rainyRows = args.monthly.map((m, i) => [MONTHS_FULL[i], `${round(m.rainy)} dias`]);
+  const rainyRows = args.monthly.map((m, i) => [MONTHS_FULL[i], `${roundedRainyDays(m)} dias`]);
   // Quebra em 2 colunas (jan-jun | jul-dez)
   const half: any[] = [];
   for (let i = 0; i < 6; i++) {
@@ -298,7 +303,7 @@ const renderMonthlyImpact = (doc: jsPDF, args: ExportArgs) => {
     "Total de dias impactados",
     "—",
     ...(["low", "moderate", "high", "severe"] as ImpactKey[]).map(
-      (k) => `${fmt1(args.agg.totals[k])} dias`
+      (k) => `${round(args.agg.totals[k])} dias`
     ),
   ];
 
@@ -333,11 +338,12 @@ const renderMonthlyImpact = (doc: jsPDF, args: ExportArgs) => {
   doc.setFont("helvetica", "italic");
   doc.setFontSize(8);
   doc.setTextColor(...C.muted);
-  doc.text(
-    `*Médias do histórico selecionado (${args.historyPeriodLabel}). Valores mensais maiores que zero são arredondados para cima; totais usam médias precisas.`,
-    PAGE.margin, y + 3
+  const footnote = doc.splitTextToSize(
+    `*Médias do histórico selecionado (${args.historyPeriodLabel}). Valores mensais maiores que zero são arredondados para cima; o total é a soma dos valores mensais arredondados. Detalhes na seção "Como os números são calculados".`,
+    CONTENT_W
   );
-  y += 10;
+  doc.text(footnote, PAGE.margin, y + 3);
+  y += 6 + footnote.length * 3.5;
 
   // === Distribuição percentual ===
   y = sectionTitle(doc, y, "Distribuição por tipologia (% sobre dias chuvosos)");
@@ -346,7 +352,7 @@ const renderMonthlyImpact = (doc: jsPDF, args: ExportArgs) => {
     IMPACT_LABELS[k],
     IMPACT_RANGES[k],
     pct(args.agg.percentages[k]),
-    `${fmt1(args.agg.totals[k])} dias/ano`,
+    `${round(args.agg.totals[k])} dias/ano`,
   ]);
 
   autoTable(doc, {
@@ -372,15 +378,20 @@ const renderMonthlyImpact = (doc: jsPDF, args: ExportArgs) => {
   });
 };
 
-const drawUnproductivityCards = (doc: jsPDF, args: ExportArgs, y: number) => {
+const drawUnproductivityCards = (
+  doc: jsPDF,
+  agg: AggregatedImpact,
+  earthworksSevereShare: number,
+  y: number
+) => {
   const items = [
-    { label: "Obras cobertas", value: args.agg.unprodCovered, hint: "Severo / 365" },
-    { label: "Fora de áreas industriais", value: args.agg.unprodOutsideIndustrial, hint: "(Mod + Alto + Sev) / 365" },
-    { label: "Comuns em áreas industriais", value: args.agg.unprodCommonIndustrial, hint: "(Bx + Mod + Alto + Sev) / 365" },
+    { label: "Obras cobertas", value: agg.unprodCovered, hint: "Severo / 365" },
+    { label: "Fora de áreas industriais", value: agg.unprodOutsideIndustrial, hint: "(Mod + Alto + Sev) / 365" },
+    { label: "Comuns em áreas industriais", value: agg.unprodCommonIndustrial, hint: "(Bx + Mod + Alto + Sev) / 365" },
     {
       label: "Alto volume de terraplenagem",
-      value: args.agg.unprodEarthworks,
-      hint: `(Bx + Mod + Alto + Sev x ${Math.round(args.earthworksSevereShare * 100)}%) / 365`,
+      value: agg.unprodEarthworks,
+      hint: `(Bx + Mod + Alto + Sev x ${Math.round(earthworksSevereShare * 100)}%) / 365`,
     },
   ];
 
@@ -462,6 +473,18 @@ const renderUnproductivity = async (doc: jsPDF, args: ExportArgs) => {
 
   y = (doc as any).lastAutoTable.finalY + 6;
 
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8.5);
+  doc.setTextColor(...(args.weightsWereChanged ? C.primary : C.muted));
+  doc.text(
+    args.weightsWereChanged
+      ? "Premissa padrão de pesos alterada para a simulação."
+      : "Premissa padrão de pesos mantida na simulação.",
+    PAGE.margin,
+    y
+  );
+  y += 5;
+
   // === Gráfico de ponderação (3º gráfico do dashboard) ===
   const totalsChartEl = args.chartContainer
     ? args.chartContainer.querySelectorAll<HTMLElement>(".pdf-chart")[2]
@@ -531,7 +554,7 @@ const renderUnproductivity = async (doc: jsPDF, args: ExportArgs) => {
     y = (doc as any).lastAutoTable.finalY + 8;
   }
 
-  const unprodSectionMinH = 12 + 2 * 28 + 4 + 4;
+  const unprodSectionMinH = 12 + 48 + 4 + 4;
   if (y + unprodSectionMinH > PAGE.h - 18) {
     doc.addPage();
     drawHeader(doc, `Análise de Chuva — ${args.location}`, "Ponderação e improdutividade considerada");
@@ -541,7 +564,49 @@ const renderUnproductivity = async (doc: jsPDF, args: ExportArgs) => {
   // === Improdutividade ===
   y = sectionTitle(doc, y, "Improdutividade considerada (anual)");
 
-  drawUnproductivityCards(doc, args, y);
+  autoTable(doc, {
+    startY: y,
+    head: [["Critério", "Obras cobertas", "Fora de áreas industriais", "Comuns em áreas industriais", "Alto volume de terraplenagem"]],
+    body: [
+      [
+        "Critérios fixos\nPesos: 25% | 50% | 100% | 100%\nTerraplenagem severa: 100%",
+        pct(args.fixedAgg.unprodCovered * 100),
+        pct(args.fixedAgg.unprodOutsideIndustrial * 100),
+        pct(args.fixedAgg.unprodCommonIndustrial * 100),
+        pct(args.fixedAgg.unprodEarthworks * 100),
+      ],
+      [
+        `Simulação\nPesos: ${Math.round(args.weights.low * 100)}% | ${Math.round(args.weights.moderate * 100)}% | ${Math.round(args.weights.high * 100)}% | ${Math.round(args.weights.severe * 100)}%\nTerraplenagem severa: ${Math.round(args.earthworksSevereShare * 100)}%`,
+        pct(args.agg.unprodCovered * 100),
+        pct(args.agg.unprodOutsideIndustrial * 100),
+        pct(args.agg.unprodCommonIndustrial * 100),
+        pct(args.agg.unprodEarthworks * 100),
+      ],
+    ],
+    theme: "grid",
+    headStyles: { fillColor: C.primary, textColor: C.white, fontSize: 8, halign: "center" },
+    bodyStyles: { fontSize: 8, textColor: C.text, valign: "middle" },
+    columnStyles: {
+      0: { fontStyle: "bold", cellWidth: 46 },
+      1: { halign: "center" },
+      2: { halign: "center" },
+      3: { halign: "center" },
+      4: { halign: "center" },
+    },
+    alternateRowStyles: { fillColor: [248, 250, 252] },
+    margin: { left: PAGE.margin, right: PAGE.margin },
+  });
+
+  y = (doc as any).lastAutoTable.finalY + 8;
+
+  if (y + 68 > PAGE.h - 18) {
+    doc.addPage();
+    drawHeader(doc, `Análise de Chuva — ${args.location}`, "Ponderação e improdutividade considerada");
+    y = 38;
+  }
+
+  y = sectionTitle(doc, y, "Detalhe da simulação atual");
+  drawUnproductivityCards(doc, args.agg, args.earthworksSevereShare, y);
 };
 
 // ============================================================
@@ -660,6 +725,25 @@ const renderCharts = async (doc: jsPDF, args: ExportArgs) => {
 // ============================================================
 //  Entry point
 // ============================================================
+// ============================================================
+//  ÚLTIMA PÁGINA — Metodologia de cálculo
+// ============================================================
+const renderMethodology = (doc: jsPDF, args: ExportArgs) => {
+  doc.addPage();
+  drawHeader(doc, `Análise de Chuva — ${args.location}`, "Metodologia de cálculo");
+
+  let y = sectionTitle(doc, 38, "Como os números são calculados");
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(...C.text);
+  CALCULATION_NOTES.forEach((note, i) => {
+    const lines = doc.splitTextToSize(`${i + 1}. ${note}`, CONTENT_W - 4);
+    doc.text(lines, PAGE.margin + 2, y);
+    y += lines.length * 4.5 + 2;
+  });
+};
+
 export async function exportDashboardPdf(args: ExportArgs) {
   const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
 
@@ -667,6 +751,7 @@ export async function exportDashboardPdf(args: ExportArgs) {
   renderMonthlyImpact(doc, args);
   await renderUnproductivity(doc, args);
   await renderCharts(doc, args);
+  renderMethodology(doc, args);
 
   drawFooter(doc);
 

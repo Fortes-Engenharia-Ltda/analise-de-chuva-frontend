@@ -234,6 +234,23 @@ export function impactByMonthAvg(rows: MonthRow[]): ImpactPerMonth[] {
   });
 }
 
+// Arredonda para cima valores > 0 (mesma regra exibida na tabela mensal)
+export const ceilDays = (n: number) => (n > 0 ? Math.ceil(n) : 0);
+
+// Dias chuvosos do mês = soma das categorias com chuva, cada uma já arredondada para cima
+export const roundedRainyDays = (m: ImpactPerMonth) =>
+  ceilDays(m.low) + ceilDays(m.moderate) + ceilDays(m.high) + ceilDays(m.severe);
+
+// Texto explicativo da metodologia, compartilhado entre dashboard e PDF
+export const CALCULATION_NOTES: string[] = [
+  "Cada dia do histórico é classificado pela chuva registrada: sem impacto (< 2 mm), baixo (2–10 mm), moderado (10–15 mm), alto (15–20 mm) e severo (> 20 mm).",
+  "A média mensal de cada categoria é o número de dias da categoria naquele mês dividido pela quantidade de anos com dados para o mês.",
+  "Médias mensais maiores que zero são arredondadas para cima (ex.: 0,2 dia → 1 dia). Os dias chuvosos do mês são a soma das categorias com chuva já arredondadas.",
+  "O total anual de cada categoria é a soma das 12 médias mensais já arredondadas, e não o arredondamento da soma das médias. Por isso o total pode ser maior que a soma dos valores exatos.",
+  "Dias ponderados = total anual arredondado × peso da categoria. A distribuição percentual usa os mesmos totais arredondados.",
+  "Improdutividade = soma dos dias ponderados das categorias consideradas em cada critério ÷ 365.",
+];
+
 export interface Weights {
   low: number;
   moderate: number;
@@ -244,7 +261,7 @@ export interface Weights {
 export const DEFAULT_WEIGHTS: Weights = { low: 0.25, moderate: 0.5, high: 1, severe: 1 };
 
 export interface AggregatedImpact {
-  totals: Record<ImpactKey, number>;          // soma média anual de dias por tipo
+  totals: Record<ImpactKey, number>;          // soma anual das médias mensais arredondadas para cima
   totalImpacted: number;                       // sum (excluindo none)
   totalRainy: number;                          // sum (excluindo none)
   totalDays: number;                           // sum incluindo none
@@ -267,12 +284,13 @@ export function aggregate(
   options: AggregateOptions = {},
 ): AggregatedImpact {
   const totals: Record<ImpactKey, number> = { none: 0, low: 0, moderate: 0, high: 0, severe: 0 };
+  // Soma das médias mensais já arredondadas para cima (regra da tabela mensal)
   for (const m of monthly) {
-    totals.none += m.none;
-    totals.low += m.low;
-    totals.moderate += m.moderate;
-    totals.high += m.high;
-    totals.severe += m.severe;
+    totals.none += ceilDays(m.none);
+    totals.low += ceilDays(m.low);
+    totals.moderate += ceilDays(m.moderate);
+    totals.high += ceilDays(m.high);
+    totals.severe += ceilDays(m.severe);
   }
 
   const totalRainy = totals.low + totals.moderate + totals.high + totals.severe;
@@ -316,7 +334,7 @@ export function aggregate(
 }
 
 export function avgRainyDaysPerMonth(monthly: ImpactPerMonth[]): number {
-  const sum = monthly.reduce((a, m) => a + m.rainy, 0);
+  const sum = monthly.reduce((a, m) => a + roundedRainyDays(m), 0);
   return sum / 12;
 }
 

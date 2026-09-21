@@ -12,20 +12,24 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { Activity, Gauge } from "lucide-react";
+import { Activity, Gauge, RotateCcw } from "lucide-react";
 import {
   aggregate,
+  CALCULATION_NOTES,
+  ceilDays,
   DEFAULT_WEIGHTS,
   IMPACT_COLORS,
   IMPACT_LABELS,
   IMPACT_RANGES,
   ImpactKey,
   impactByMonthAvg,
+  roundedRainyDays,
   type MonthRow,
   type Weights,
 } from "@/lib/rainfall";
 import { Slider } from "@/components/ui/slider";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { exportDashboardPdf } from "@/lib/pdfExport";
 
 interface Props {
@@ -43,6 +47,8 @@ export interface DashboardHandle {
 const fmt = (n: number, d = 1) => n.toLocaleString("pt-BR", { minimumFractionDigits: d, maximumFractionDigits: d });
 const fmtCeil = (n: number) => (n > 0 ? Math.ceil(n) : 0).toLocaleString("pt-BR");
 const pct = (n: number) => `${n.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
+const weightsEqual = (a: Weights, b: Weights) =>
+  a.low === b.low && a.moderate === b.moderate && a.high === b.high && a.severe === b.severe;
 
 export const Dashboard = forwardRef<DashboardHandle, Props>(
   ({ rows, location, estacaoCodigo, yearsRange, historyPeriodLabel }, ref) => {
@@ -55,6 +61,12 @@ export const Dashboard = forwardRef<DashboardHandle, Props>(
     () => aggregate(monthly, weights, { earthworksSevereShare }),
     [monthly, weights, earthworksSevereShare],
   );
+  const fixedAgg = useMemo(
+    () => aggregate(monthly, DEFAULT_WEIGHTS, { earthworksSevereShare: 1 }),
+    [monthly],
+  );
+  const weightsWereChanged = !weightsEqual(weights, DEFAULT_WEIGHTS);
+  const simulationWasChanged = weightsWereChanged || earthworksSevereShare !== 1;
 
   useImperativeHandle(ref, () => ({
     exportPdf: async () => {
@@ -66,12 +78,14 @@ export const Dashboard = forwardRef<DashboardHandle, Props>(
         historyPeriodLabel,
         monthly,
         agg,
+        fixedAgg,
         weights,
+        weightsWereChanged,
         earthworksSevereShare,
         chartContainer: chartsRef.current,
       });
     },
-  }), [location, estacaoCodigo, rows.length, yearsRange, historyPeriodLabel, monthly, agg, weights, earthworksSevereShare]);
+  }), [location, estacaoCodigo, rows.length, yearsRange, historyPeriodLabel, monthly, agg, fixedAgg, weights, weightsWereChanged, earthworksSevereShare]);
 
   const impactedKeys: ImpactKey[] = ["low", "moderate", "high", "severe"];
   const pieData = impactedKeys.map((k) => ({
@@ -79,6 +93,15 @@ export const Dashboard = forwardRef<DashboardHandle, Props>(
     value: agg.totals[k],
     key: k,
   })).filter((d) => d.value > 0.001);
+
+  // Mesmos valores da tabela mensal: médias arredondadas para cima por categoria
+  const monthlyRounded = monthly.map((m) => ({
+    monthLabel: m.monthLabel,
+    low: ceilDays(m.low),
+    moderate: ceilDays(m.moderate),
+    high: ceilDays(m.high),
+    severe: ceilDays(m.severe),
+  }));
 
   const totalsData = impactedKeys.map((k) => ({
     name: IMPACT_LABELS[k],
@@ -99,7 +122,7 @@ export const Dashboard = forwardRef<DashboardHandle, Props>(
               <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">
                 {m.monthLabel}
               </p>
-              <p className="text-lg font-semibold tabular-nums text-primary">{fmtCeil(m.rainy)}</p>
+              <p className="text-lg font-semibold tabular-nums text-primary">{roundedRainyDays(m).toLocaleString("pt-BR")}</p>
             </div>
           ))}
         </div>
@@ -153,7 +176,7 @@ export const Dashboard = forwardRef<DashboardHandle, Props>(
                 <td className="text-center px-3 py-3 text-muted-foreground/60 tabular-nums">—</td>
                 {(["low", "moderate", "high", "severe"] as const).map((k) => (
                   <td key={k} className="text-center px-3 py-3 font-bold tabular-nums text-foreground">
-                    {fmtCeil(agg.totals[k])} <span className="text-xs font-normal">dias</span>
+                    {agg.totals[k].toLocaleString("pt-BR")} <span className="text-xs font-normal">dias</span>
                   </td>
                 ))}
               </tr>
@@ -161,7 +184,8 @@ export const Dashboard = forwardRef<DashboardHandle, Props>(
           </table>
         </div>
         <p className="text-[11px] text-muted-foreground px-5 py-2 italic">
-          *Média dos últimos {historyPeriodLabel}. Valores maiores que zero são arredondados para cima.
+          *Média dos últimos {historyPeriodLabel}. Valores mensais maiores que zero são arredondados para cima;
+          o total é a soma dos valores mensais arredondados. Veja "Como os números são calculados" no fim da página.
         </p>
       </div>
 
@@ -176,7 +200,7 @@ export const Dashboard = forwardRef<DashboardHandle, Props>(
               </p>
             </div>
             <p className="text-3xl font-semibold tracking-tight tabular-nums">
-              {fmtCeil(agg.totals[k])}
+              {agg.totals[k].toLocaleString("pt-BR")}
               <span className="text-base text-muted-foreground font-normal ml-1">dias</span>
             </p>
             <div className="mt-2 pt-2 border-t flex items-center justify-between text-xs">
@@ -198,12 +222,14 @@ export const Dashboard = forwardRef<DashboardHandle, Props>(
           <div className="flex items-center justify-between mb-4">
             <div>
               <h3 className="font-semibold">Média de dias chuvosos por mês</h3>
-              <p className="text-xs text-muted-foreground">Empilhado por categoria de impacto</p>
+              <p className="text-xs text-muted-foreground">
+                Empilhado por categoria de impacto · médias arredondadas para cima
+              </p>
             </div>
           </div>
           <div className="h-[300px]">
             <ResponsiveContainer>
-              <BarChart data={monthly} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+              <BarChart data={monthlyRounded} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                 <XAxis dataKey="monthLabel" stroke="hsl(var(--muted-foreground))" fontSize={12} />
                 <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} />
@@ -214,7 +240,7 @@ export const Dashboard = forwardRef<DashboardHandle, Props>(
                     borderRadius: 12,
                     fontSize: 12,
                   }}
-                  formatter={(v: number, name: string) => [fmt(v), name]}
+                  formatter={(v: number, name: string) => [`${v.toLocaleString("pt-BR")} dias`, name]}
                 />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
                 <Bar dataKey="low" stackId="a" name="Baixo" fill={IMPACT_COLORS.low} radius={[0, 0, 0, 0]} />
@@ -304,9 +330,27 @@ export const Dashboard = forwardRef<DashboardHandle, Props>(
         <div className="bg-card border rounded-2xl p-5 shadow-card print-avoid-break">
           <div className="flex items-center justify-between mb-1">
             <h3 className="font-semibold">Pesos por categoria</h3>
-            <Badge variant="outline" className="text-[10px]">Editável</Badge>
+            <div className="flex items-center gap-2">
+              <Badge variant={weightsWereChanged ? "default" : "outline"} className="text-[10px]">
+                {weightsWereChanged ? "Alterado" : "Padrão"}
+              </Badge>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 px-2"
+                onClick={() => setWeights(DEFAULT_WEIGHTS)}
+                disabled={!weightsWereChanged}
+                title="Restaurar pesos padrão"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                <span className="sr-only">Restaurar pesos padrão</span>
+              </Button>
+            </div>
           </div>
-          <p className="text-xs text-muted-foreground mb-4">Ajuste a importância de cada faixa</p>
+          <p className="text-xs text-muted-foreground mb-4">
+            Padrão: 25% | 50% | 100% | 100%
+          </p>
           <div className="space-y-4">
             {(["low", "moderate", "high", "severe"] as const).map((k) => (
               <div key={k}>
@@ -340,7 +384,7 @@ export const Dashboard = forwardRef<DashboardHandle, Props>(
               <h3 className="font-semibold">Improdutividade considerada (anual)</h3>
             </div>
             <p className="text-xs text-muted-foreground">
-              Calculada sobre os dias ponderados, dividida por 365 dias
+              Critérios fixos versus simulação dos sliders, divididos por 365 dias
             </p>
           </div>
           <div className="w-full lg:w-80 rounded-xl border bg-muted/30 p-3">
@@ -359,7 +403,66 @@ export const Dashboard = forwardRef<DashboardHandle, Props>(
             />
           </div>
         </div>
-        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+        <div className="mb-3 flex flex-col gap-2 rounded-xl border bg-primary-soft/40 px-4 py-2 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-xs font-medium text-primary">Premissa padrão dos pesos</p>
+          <div className="flex flex-wrap gap-2">
+            <Badge variant={weightsWereChanged ? "default" : "outline"} className="text-[10px]">
+              {weightsWereChanged ? "Pesos alterados" : "Pesos mantidos"}
+            </Badge>
+            <Badge variant={simulationWasChanged ? "default" : "outline"} className="text-[10px]">
+              {simulationWasChanged ? "Simulação alterada" : "Sem alteração"}
+            </Badge>
+          </div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[760px] text-sm border-collapse">
+            <thead>
+              <tr className="border-b bg-muted/40">
+                <th className="px-4 py-3 text-left font-semibold">Critério</th>
+                <th className="px-3 py-3 text-center font-semibold">Obras cobertas</th>
+                <th className="px-3 py-3 text-center font-semibold">Fora de áreas industriais</th>
+                <th className="px-3 py-3 text-center font-semibold">Comuns em áreas industriais</th>
+                <th className="px-3 py-3 text-center font-semibold">Alto volume de terraplenagem</th>
+              </tr>
+            </thead>
+            <tbody>
+              {[
+                {
+                  label: "Critérios fixos",
+                  description: "25% | 50% | 100% | 100%",
+                  agg: fixedAgg,
+                  earthworks: "100%",
+                },
+                {
+                  label: "Simulação",
+                  description: `${Math.round(weights.low * 100)}% | ${Math.round(weights.moderate * 100)}% | ${Math.round(weights.high * 100)}% | ${Math.round(weights.severe * 100)}%`,
+                  agg,
+                  earthworks: `${Math.round(earthworksSevereShare * 100)}%`,
+                },
+              ].map((row) => (
+                <tr key={row.label} className="border-b last:border-b-0">
+                  <td className="px-4 py-3">
+                    <p className="font-medium">{row.label}</p>
+                    <p className="text-[11px] text-muted-foreground">
+                      Pesos: {row.description} · Terraplenagem severa: {row.earthworks}
+                    </p>
+                  </td>
+                  {[
+                    row.agg.unprodCovered,
+                    row.agg.unprodOutsideIndustrial,
+                    row.agg.unprodCommonIndustrial,
+                    row.agg.unprodEarthworks,
+                  ].map((value, idx) => (
+                    <td key={idx} className="px-3 py-3 text-center font-semibold tabular-nums">
+                      {pct(value * 100)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4 mt-4">
           {[
             {
               label: "Obras cobertas",
@@ -391,6 +494,16 @@ export const Dashboard = forwardRef<DashboardHandle, Props>(
             </div>
           ))}
         </div>
+      </div>
+
+      {/* Metodologia */}
+      <div className="bg-card border rounded-2xl p-5 shadow-card print-section">
+        <h3 className="font-semibold">Como os números são calculados</h3>
+        <ol className="mt-2 list-decimal pl-5 space-y-1 text-xs text-muted-foreground">
+          {CALCULATION_NOTES.map((note) => (
+            <li key={note}>{note}</li>
+          ))}
+        </ol>
       </div>
     </div>
   );
