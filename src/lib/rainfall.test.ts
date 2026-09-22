@@ -34,6 +34,27 @@ describe("aggregate", () => {
     expect(halfSevere.unprodCommonIndustrial).toBe(fullSevere.unprodCommonIndustrial);
     expect(halfSevere.unprodEarthworks).toBeLessThan(fullSevere.unprodEarthworks);
   });
+
+  it("sums the rounded-up monthly averages instead of rounding the sum", () => {
+    const monthly: ImpactPerMonth[] = baseMonthly.map((m) => ({
+      ...m,
+      none: 20.4,
+      low: 0.2,
+      moderate: 0,
+      high: 1.1,
+      severe: 0.1,
+    }));
+
+    const result = aggregate(monthly, DEFAULT_WEIGHTS);
+
+    expect(result.totals.none).toBe(12 * 21);
+    expect(result.totals.low).toBe(12);
+    expect(result.totals.moderate).toBe(0);
+    expect(result.totals.high).toBe(24);
+    expect(result.totals.severe).toBe(12);
+    expect(result.weighted.low).toBe(3);
+    expect(result.unprodCovered).toBeCloseTo(12 / 365);
+  });
 });
 
 describe("filterByHistory", () => {
